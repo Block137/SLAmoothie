@@ -70,9 +70,12 @@ ifneq "$(NODEFAULTEXCLUDES)" "1"
 
 ifeq "$(EXCLUDE_MODULES)" ""
 
-ifeq "$(CNC)" "1"
-# CNC build excludes these
-export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/temperatureswitch tools/extruder
+#ifeq "$(CNC)" "1"
+## CNC build excludes these
+#export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/temperatureswitch tools/extruder
+ifeq "$(SLA)" "1"
+# SLA build excludes these
+export EXCLUDE_MODULES = tools/drillingcycles tools/spindle tools/filamentdetector tools/scaracal tools/extruder tools/zprobe tools/toolmanager utils/panel
 else
 # 3D build excludes these
 export EXCLUDE_MODULES = tools/drillingcycles tools/spindle

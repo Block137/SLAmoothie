@@ -72,15 +72,6 @@ try_again:
     char first_char = possible_command[0];
     unsigned int n;
 
-    if(first_char == '$') {
-        // ignore as simpleshell will handle it
-        return;
-
-    }else if(islower(first_char)) {
-        // ignore all lowercase as they are simpleshell commands
-        return;
-    }
-
     if ( first_char == 'G' || first_char == 'M' || first_char == 'T' || first_char == 'S' || first_char == 'N' ) {
 
         //Get linenumber
@@ -468,6 +459,14 @@ try_again:
         // Ignore comments and blank lines
         new_message.stream->printf("ok\n");
 
+    } else if(first_char == '$') {
+        // ignore as simpleshell will handle it
+        return;
+
+    } else if(islower(first_char)) {
+        // ignore all lowercase as they are simpleshell commands
+        return;
+        
     } else if( (n=possible_command.find_first_of("XYZF")) == 0 || (first_char == ' ' && n != string::npos) ) {
         // handle pycam syntax, use last modal group 1 command and resubmit if an X Y Z or F is found on its own line
         char buf[6];

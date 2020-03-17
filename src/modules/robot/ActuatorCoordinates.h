@@ -14,7 +14,7 @@
     #define MAX_ROBOT_ACTUATORS 3
     #else
     // includes 2 extruders
-    #define MAX_ROBOT_ACTUATORS 5
+    #define MAX_ROBOT_ACTUATORS 4
     #endif
 #endif
 

@@ -20,6 +20,7 @@
 #include "modules/tools/drillingcycles/Drillingcycles.h"
 #include "FilamentDetector.h"
 #include "MotorDriverControl.h"
+#include "modules/communication/RBMTest.h"
 
 #include "modules/robot/Conveyor.h"
 #include "modules/utils/simpleshell/SimpleShell.h"
@@ -189,6 +190,9 @@ void init() {
     #ifndef NO_UTILS_MOTORDRIVERCONTROL
     kernel->add_module( new MotorDriverControl(0) );
     #endif
+
+    kernel->add_module( new(AHB0) RBMTest() );
+    
     // Create and initialize USB stuff
     u.init();
 
@@ -262,12 +266,12 @@ int main()
 {
     init();
 
-    uint16_t cnt= 0;
+//    uint16_t cnt= 0;
     // Main loop
     while(1){
         if(THEKERNEL->is_using_leds()) {
             // flash led 2 to show we are alive
-            leds[1]= (cnt++ & 0x1000) ? 1 : 0;
+//            leds[1]= (cnt++ & 0x1000) ? 1 : 0;
         }
         THEKERNEL->call_event(ON_MAIN_LOOP);
         THEKERNEL->call_event(ON_IDLE);

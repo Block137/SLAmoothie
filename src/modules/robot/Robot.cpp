@@ -1028,22 +1028,22 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
 
     #if MAX_ROBOT_ACTUATORS > 3
     // process extruder parameters, for active extruder only (only one active extruder at a time)
-    int selected_extruder= 0;
-    if(gcode->has_letter('E')) {
-        selected_extruder= get_active_extruder();
-        param[E_AXIS]= gcode->get_value('E');
-    }
+    // int selected_extruder= 0;
+    // if(gcode->has_letter('E')) {
+        // selected_extruder= get_active_extruder();
+        // param[E_AXIS]= gcode->get_value('E');
+    // }
 
-    // do E for the selected extruder
-    if(selected_extruder > 0 && !isnan(param[E_AXIS])) {
-        if(this->e_absolute_mode) {
-            target[selected_extruder]= param[E_AXIS];
-            delta_e= target[selected_extruder] - machine_position[selected_extruder];
-        }else{
-            delta_e= param[E_AXIS];
-            target[selected_extruder] = delta_e + machine_position[selected_extruder];
-        }
-    }
+    // // do E for the selected extruder
+    // if(selected_extruder > 0 && !isnan(param[E_AXIS])) {
+        // if(this->e_absolute_mode) {
+            // target[selected_extruder]= param[E_AXIS];
+            // delta_e= target[selected_extruder] - machine_position[selected_extruder];
+        // }else{
+            // delta_e= param[E_AXIS];
+            // target[selected_extruder] = delta_e + machine_position[selected_extruder];
+        // }
+    // }
 
     // process ABC axis, this is mutually exclusive to using E for an extruder, so if E is used and A then the results are undefined
     for (int i = A_AXIS; i < n_motors; ++i) {
@@ -1208,7 +1208,7 @@ bool Robot::append_milestone(const float target[], float rate_mm_s)
     }
 
     // check soft endstops only for homed axis that are enabled
-    if(soft_endstop_enabled) {
+/*    if(soft_endstop_enabled) {
         for (int i = 0; i <= Z_AXIS; ++i) {
             if(!is_homed(i)) continue;
             if( (!isnan(soft_endstop_min[i]) && transformed_target[i] < soft_endstop_min[i]) || (!isnan(soft_endstop_max[i]) && transformed_target[i] > soft_endstop_max[i]) ) {
@@ -1240,7 +1240,7 @@ bool Robot::append_milestone(const float target[], float rate_mm_s)
             }
         }
     }
-
+*/
 
     bool move= false;
     float sos= 0; // sum of squares for just primary axis (XYZ usually)
