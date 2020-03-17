@@ -8,19 +8,19 @@
 #include "libs/Kernel.h"
 
 #include "modules/tools/laser/Laser.h"
-#include "modules/tools/spindle/SpindleMaker.h"
-#include "modules/tools/extruder/ExtruderMaker.h"
+//#include "modules/tools/spindle/SpindleMaker.h"
+//#include "modules/tools/extruder/ExtruderMaker.h"
 #include "modules/tools/temperaturecontrol/TemperatureControlPool.h"
 #include "modules/tools/endstops/Endstops.h"
-#include "modules/tools/zprobe/ZProbe.h"
-#include "modules/tools/scaracal/SCARAcal.h"
-#include "RotaryDeltaCalibration.h"
+//#include "modules/tools/zprobe/ZProbe.h"
+//#include "modules/tools/scaracal/SCARAcal.h"
+//#include "RotaryDeltaCalibration.h"
 #include "modules/tools/switch/SwitchPool.h"
 #include "modules/tools/temperatureswitch/TemperatureSwitch.h"
-#include "modules/tools/drillingcycles/Drillingcycles.h"
-#include "FilamentDetector.h"
-#include "MotorDriverControl.h"
-#include "modules/communication/RBMTest.h"
+//#include "modules/tools/drillingcycles/Drillingcycles.h"
+//#include "FilamentDetector.h"
+//#include "MotorDriverControl.h"
+//#include "modules/communication/RBMTest.h"
 
 #include "modules/robot/Conveyor.h"
 #include "modules/utils/simpleshell/SimpleShell.h"
@@ -29,7 +29,7 @@
 #include "modules/utils/player/Player.h"
 #include "modules/utils/killbutton/KillButton.h"
 #include "modules/utils/PlayLed/PlayLed.h"
-#include "modules/utils/panel/Panel.h"
+//#include "modules/utils/panel/Panel.h"
 #include "libs/Network/uip/Network.h"
 #include "Config.h"
 #include "checksumm.h"
@@ -132,18 +132,6 @@ void init() {
     kernel->add_module( new(AHB0) KillButton() );
     kernel->add_module( new(AHB0) PlayLed() );
 
-    // these modules can be completely disabled in the Makefile by adding to EXCLUDE_MODULES
-    #ifndef NO_TOOLS_SWITCH
-    SwitchPool *sp= new SwitchPool();
-    sp->load_tools();
-    delete sp;
-    #endif
-    #ifndef NO_TOOLS_EXTRUDER
-    // NOTE this must be done first before Temperature control so ToolManager can handle Tn before temperaturecontrol module does
-    ExtruderMaker *em= new ExtruderMaker();
-    em->load_tools();
-    delete em;
-    #endif
     #ifndef NO_TOOLS_TEMPERATURECONTROL
     // Note order is important here must be after extruder so Tn as a parameter will get executed first
     TemperatureControlPool *tp= new TemperatureControlPool();
@@ -156,24 +144,6 @@ void init() {
     #ifndef NO_TOOLS_LASER
     kernel->add_module( new Laser() );
     #endif
-    #ifndef NO_TOOLS_SPINDLE
-    SpindleMaker *sm= new SpindleMaker();
-    sm->load_spindle();
-    delete sm;
-    //kernel->add_module( new(AHB0) Spindle() );
-    #endif
-    #ifndef NO_UTILS_PANEL
-    kernel->add_module( new(AHB0) Panel() );
-    #endif
-    #ifndef NO_TOOLS_ZPROBE
-    kernel->add_module( new(AHB0) ZProbe() );
-    #endif
-    #ifndef NO_TOOLS_SCARACAL
-    kernel->add_module( new(AHB0) SCARAcal() );
-    #endif
-    #ifndef NO_TOOLS_ROTARYDELTACALIBRATION
-    kernel->add_module( new(AHB0) RotaryDeltaCalibration() );
-    #endif
     #ifndef NONETWORK
     kernel->add_module( new Network() );
     #endif
@@ -181,17 +151,9 @@ void init() {
     // Must be loaded after TemperatureControl
     kernel->add_module( new(AHB0) TemperatureSwitch() );
     #endif
-    #ifndef NO_TOOLS_DRILLINGCYCLES
-    kernel->add_module( new(AHB0) Drillingcycles() );
-    #endif
-    #ifndef NO_TOOLS_FILAMENTDETECTOR
-    kernel->add_module( new(AHB0) FilamentDetector() );
-    #endif
-    #ifndef NO_UTILS_MOTORDRIVERCONTROL
-    kernel->add_module( new MotorDriverControl(0) );
-    #endif
-
-    kernel->add_module( new(AHB0) RBMTest() );
+//    #ifndef NO_TOOLS_FILAMENTDETECTOR
+//    kernel->add_module( new(AHB0) FilamentDetector() );
+//    #endif
     
     // Create and initialize USB stuff
     u.init();

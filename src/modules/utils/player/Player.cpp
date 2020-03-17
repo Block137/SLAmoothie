@@ -28,7 +28,7 @@
 #include "PlayerPublicAccess.h"
 #include "TemperatureControlPublicAccess.h"
 #include "TemperatureControlPool.h"
-#include "ExtruderPublicAccess.h"
+//#include "ExtruderPublicAccess.h"
 
 #include <cstddef>
 #include <cmath>
@@ -506,7 +506,7 @@ Suspend a print in progress
 1. send pause to upstream host, or pause if printing from sd
 1a. loop on_main_loop several times to clear any buffered commmands
 2. wait for empty queue
-3. save the current position, extruder position, temperatures - any state that would need to be restored
+3. save the current position, temperatures - any state that would need to be restored
 4. retract by specifed amount either on command line or in config
 5. turn off heaters.
 6. optionally run after_suspend gcode (either in config or on command line)
@@ -563,9 +563,6 @@ void Player::suspend_part2()
     saved_position[0]= std::get<X_AXIS>(wpos);
     saved_position[1]= std::get<Y_AXIS>(wpos);
     saved_position[2]= std::get<Z_AXIS>(wpos);
-
-    // save current extruder state
-    PublicData::set_value( extruder_checksum, save_state_checksum, nullptr );
 
     // save state use M120
     THEROBOT->push_state();
@@ -699,9 +696,6 @@ void Player::resume_command(string parameters, StreamOutput *stream )
         THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message );
     }
     THEROBOT->absolute_mode= abs_mode;
-
-    // restore extruder state
-    PublicData::set_value( extruder_checksum, restore_state_checksum, nullptr );
 
    if(THEKERNEL->is_halted()) {
         THEKERNEL->streams->printf("Resume aborted by kill\n");

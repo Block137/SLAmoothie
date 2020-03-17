@@ -30,7 +30,7 @@
 #include "ConfigValue.h"
 #include "libs/StreamOutput.h"
 #include "StreamOutputPool.h"
-#include "ExtruderPublicAccess.h"
+//#include "ExtruderPublicAccess.h"
 #include "GcodeDispatch.h"
 #include "ActuatorCoordinates.h"
 #include "EndstopsPublicAccess.h"
@@ -408,22 +408,6 @@ void Robot::print_position(uint8_t subcode, std::string& res, bool ignore_extrud
     if(n > sizeof(buf)) n= sizeof(buf);
     res.append(buf, n);
 
-    #if MAX_ROBOT_ACTUATORS > 3
-    // deal with the ABC axis
-    for (int i = A_AXIS; i < n_motors; ++i) {
-        n= 0;
-        if(ignore_extruders && actuators[i]->is_extruder()) continue; // don't show an extruder as that will be E
-        if(subcode == 4) { // M114.4 print last milestone
-            n= snprintf(buf, sizeof(buf), " %c:%1.4f", 'A'+i-A_AXIS, machine_position[i]);
-
-        }else if(subcode == 2 || subcode == 3) { // M114.2/M114.3 print actuator position which is the same as machine position for ABC
-            // current actuator position
-            n= snprintf(buf, sizeof(buf), " %c:%1.4f", 'A'+i-A_AXIS, actuators[i]->get_current_position());
-        }
-        if(n > sizeof(buf)) n= sizeof(buf);
-        if(n > 0) res.append(buf, n);
-    }
-    #endif
 }
 
 // converts current last milestone (machine position without compensation transform) to work coordinate system (inverse transform)
@@ -451,8 +435,6 @@ Robot::wcs_t Robot::wcs2mcs(const Robot::wcs_t& pos) const
 void Robot::check_max_actuator_speeds()
 {
     for (size_t i = 0; i < n_motors; i++) {
-        if(actuators[i]->is_extruder()) continue; //extruders are not included in this check
-
         float step_freq = actuators[i]->get_max_rate() * actuators[i]->get_steps_per_mm();
         if (step_freq > THEKERNEL->base_stepping_frequency) {
             actuators[i]->set_max_rate(floorf(THEKERNEL->base_stepping_frequency / actuators[i]->get_steps_per_mm()));
@@ -604,22 +586,12 @@ void Robot::on_gcode_received(void *argument)
                 }
 
                 #if MAX_ROBOT_ACTUATORS > 3
-                if(gcode->subcode == 0 && (gcode->has_letter('E') || gcode->get_num_args() == 0)){
-                    // reset the E position, legacy for 3d Printers to be reprap compatible
-                    // find the selected extruder
-                    int selected_extruder= get_active_extruder();
-                    if(selected_extruder > 0) {
-                        float e= gcode->has_letter('E') ? gcode->get_value('E') : 0;
-                        machine_position[selected_extruder]= compensated_machine_position[selected_extruder]= e;
-                        actuators[selected_extruder]->change_last_milestone(get_e_scale_fnc ? e*get_e_scale_fnc() : e);
-                    }
-                }
                 if(gcode->subcode == 0 && gcode->get_num_args() > 0) {
                     for (int i = A_AXIS; i < n_motors; i++) {
                         // ABC just need to set machine_position and compensated_machine_position if specified
                         char axis= 'A'+i-3;
                         float ap= gcode->get_value(axis);
-                        if((!actuators[i]->is_extruder() || ap == 0) && gcode->has_letter(axis)) {
+                        if((ap == 0) && gcode->has_letter(axis)) {
                             machine_position[i]= compensated_machine_position[i]= ap;
                             actuators[i]->change_last_milestone(ap); // this updates the last_milestone in the actuator
                         }
@@ -658,15 +630,6 @@ void Robot::on_gcode_received(void *argument)
                         if(gcode->has_letter(axis)) bm |= (0x02<<i); // set appropriate bit
                     }
 
-                    // handle E parameter as currently selected extruder ABC
-                    if(gcode->has_letter('E')) {
-                        // find first selected extruder
-                        int i= get_active_extruder();
-                        if(i > 0) {
-                            bm |= (0x02<<i); // set appropriate bit
-                        }
-                    }
-
                     THEKERNEL->conveyor->wait_for_idle();
                     THEKERNEL->call_event(ON_ENABLE, (void *)bm);
                     break;
@@ -682,7 +645,6 @@ void Robot::on_gcode_received(void *argument)
 
             case 92: // M92 - set steps per mm
                 for (int i = 0; i < n_motors; ++i) {
-                    if(actuators[i]->is_extruder()) continue; //extruders handle this themselves
                     char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
                     if(gcode->has_letter(axis)) {
                         actuators[i]->change_steps_per_mm(this->to_millimeters(gcode->get_value(axis)));
@@ -695,7 +657,7 @@ void Robot::on_gcode_received(void *argument)
 
             case 114:{
                 std::string buf;
-                print_position(gcode->subcode, buf, true); // ignore extruders as they will print E themselves
+                print_position(gcode->subcode, buf, true);
                 gcode->txt_after_ok.append(buf);
                 return;
             }
@@ -715,7 +677,6 @@ void Robot::on_gcode_received(void *argument)
                         }
                         if(gcode->subcode == 1) {
                             for (size_t i = A_AXIS; i < n_motors; i++) {
-                                if(actuators[i]->is_extruder()) continue; //extruders handle this themselves
                                 gcode->stream->printf(" %c: %g ", 'A' + i - A_AXIS, actuators[i]->get_max_rate());
                             }
                         }else{
@@ -736,7 +697,6 @@ void Robot::on_gcode_received(void *argument)
                         if(gcode->subcode == 1) {
                             // ABC axis only handle actuator max speeds
                             for (size_t i = A_AXIS; i < n_motors; i++) {
-                                if(actuators[i]->is_extruder()) continue; //extruders handle this themselves
                                 int c= 'A' + i - A_AXIS;
                                 if(gcode->has_letter(c)) {
                                     float v= gcode->get_value(c);
@@ -772,7 +732,6 @@ void Robot::on_gcode_received(void *argument)
                     this->default_acceleration = acc;
                 }
                 for (int i = 0; i < n_motors; ++i) {
-                    if(actuators[i]->is_extruder()) continue; //extruders handle this themselves
                     char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
                     if(gcode->has_letter(axis)) {
                         float acc = gcode->get_value(axis); // mm/s^2
@@ -851,7 +810,6 @@ void Robot::on_gcode_received(void *argument)
             case 503: { // M503 just prints the settings
                 gcode->stream->printf(";Steps per unit:\nM92 ");
                 for (int i = 0; i < n_motors; ++i) {
-                    if(actuators[i]->is_extruder()) continue; //extruders handle this themselves
                     char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
                     gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_steps_per_mm());
                 }
@@ -860,7 +818,6 @@ void Robot::on_gcode_received(void *argument)
                 // only print if not NAN
                 gcode->stream->printf(";Acceleration mm/sec^2:\nM204 S%1.5f ", default_acceleration);
                 for (int i = 0; i < n_motors; ++i) {
-                    if(actuators[i]->is_extruder()) continue; // extruders handle this themselves
                     char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
                     if(!isnan(actuators[i]->get_acceleration())) gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_acceleration());
                 }
@@ -872,7 +829,6 @@ void Robot::on_gcode_received(void *argument)
 
                 gcode->stream->printf(";Max actuator feedrates in mm/sec:\nM203.1 ");
                 for (int i = 0; i < n_motors; ++i) {
-                    if(actuators[i]->is_extruder()) continue; // extruders handle this themselves
                     char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
                     gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_max_rate());
                 }
@@ -960,20 +916,11 @@ void Robot::on_gcode_received(void *argument)
     next_command_is_MCS = false; // must be on same line as G0 or G1
 }
 
-int Robot::get_active_extruder() const
-{
-    for (int i = E_AXIS; i < n_motors; ++i) {
-        // find first selected extruder
-        if(actuators[i]->is_extruder() && actuators[i]->is_selected()) return i;
-    }
-    return 0;
-}
-
 // process a G0/G1/G2/G3
 void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
 {
     // we have a G0/G1/G2/G3 so extract parameters and apply offsets to get machine coordinate target
-    // get XYZ and one E (which goes to the selected extruder)
+    // get XYZ
     float param[4]{NAN, NAN, NAN, NAN};
 
     // process primary axis
@@ -1027,25 +974,8 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
     float delta_e= NAN;
 
     #if MAX_ROBOT_ACTUATORS > 3
-    // process extruder parameters, for active extruder only (only one active extruder at a time)
-    // int selected_extruder= 0;
-    // if(gcode->has_letter('E')) {
-        // selected_extruder= get_active_extruder();
-        // param[E_AXIS]= gcode->get_value('E');
-    // }
 
-    // // do E for the selected extruder
-    // if(selected_extruder > 0 && !isnan(param[E_AXIS])) {
-        // if(this->e_absolute_mode) {
-            // target[selected_extruder]= param[E_AXIS];
-            // delta_e= target[selected_extruder] - machine_position[selected_extruder];
-        // }else{
-            // delta_e= param[E_AXIS];
-            // target[selected_extruder] = delta_e + machine_position[selected_extruder];
-        // }
-    // }
-
-    // process ABC axis, this is mutually exclusive to using E for an extruder, so if E is used and A then the results are undefined
+    // process ABC axis
     for (int i = A_AXIS; i < n_motors; ++i) {
         char letter= 'A'+i-A_AXIS;
         if(gcode->has_letter(letter)) {
@@ -1085,7 +1015,6 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
 
         case CW_ARC:
         case CCW_ARC:
-            // Note arcs are not currently supported by extruder based machines, as 3D slicers do not use arcs (G2/G3)
             moved= this->compute_arc(gcode, offset, target, motion_mode);
             break;
     }
@@ -1124,7 +1053,7 @@ void Robot::reset_axis_position(float x, float y, float z)
         actuators[i]->change_last_milestone(actuator_pos[i]);
 }
 
-// Reset the position for an axis (used in homing, and to reset extruder after suspend)
+// Reset the position for an axis (used in homing after suspend)
 void Robot::reset_axis_position(float position, int axis)
 {
     compensated_machine_position[axis] = position;
@@ -1133,7 +1062,7 @@ void Robot::reset_axis_position(float position, int axis)
 
 #if MAX_ROBOT_ACTUATORS > 3
     }else if(axis < n_motors) {
-        // ABC and/or extruders need to be set as there is no arm solution for them
+        // ABC need to be set as there is no arm solution for them
         machine_position[axis]= compensated_machine_position[axis]= position;
         actuators[axis]->change_last_milestone(machine_position[axis]);
 #endif
@@ -1177,12 +1106,11 @@ void Robot::reset_position_from_current_actuator_position()
         actuators[i]->change_last_milestone(actuator_pos[i]);
     }
 
-    // Handle extruders and/or ABC axis
+    // Handle ABC axis
     #if MAX_ROBOT_ACTUATORS > 3
     for (int i = A_AXIS; i < n_motors; i++) {
-        // ABC and/or extruders just need to set machine_position and compensated_machine_position
+        // ABC just need to set machine_position and compensated_machine_position
         float ap= actuator_pos[i];
-        if(actuators[i]->is_extruder() && get_e_scale_fnc) ap /= get_e_scale_fnc(); // inverse E scale if there is one and this is an extruder
         machine_position[i]= compensated_machine_position[i]= ap;
         actuators[i]->change_last_milestone(actuator_pos[i]); // this updates the last_milestone in the actuator
     }
@@ -1308,16 +1236,8 @@ bool Robot::append_milestone(const float target[], float rate_mm_s)
 
 #if MAX_ROBOT_ACTUATORS > 3
     sos= 0;
-    // for the extruders just copy the position, and possibly scale it from mm³ to mm
     for (size_t i = E_AXIS; i < n_motors; i++) {
         actuator_pos[i]= transformed_target[i];
-        if(actuators[i]->is_extruder() && get_e_scale_fnc) {
-            // NOTE this relies on the fact only one extruder is active at a time
-            // scale for volumetric or flow rate
-            // TODO is this correct? scaling the absolute target? what if the scale changes?
-            // for volumetric it basically converts mm³ to mm, but what about flow rate?
-            actuator_pos[i] *= get_e_scale_fnc();
-        }
         if(auxilliary_move) {
             // for E only moves we need to use the scaled E to calculate the distance
             sos += powf(actuator_pos[i] - actuators[i]->get_last_milestone(), 2);
@@ -1382,7 +1302,7 @@ bool Robot::append_milestone(const float target[], float rate_mm_s)
     return false;
 }
 
-// Used to plan a single move used by things like endstops when homing, zprobe, extruder firmware retracts etc.
+// Used to plan a single move used by things like endstops when homing
 bool Robot::delta_move(const float *delta, float rate_mm_s, uint8_t naxis)
 {
     if(THEKERNEL->is_halted()) return false;
@@ -1427,19 +1347,6 @@ bool Robot::append_line(Gcode *gcode, const float target[], float rate_mm_s, flo
     if(millimeters_of_travel < 0.00001F) {
         // we have no movement in XYZ, probably E only extrude or retract
         return this->append_milestone(target, rate_mm_s);
-    }
-
-    /*
-        For extruders, we need to do some extra work to limit the volumetric rate if specified...
-        If using volumetric limts we need to be using volumetric extrusion for this to work as Ennn needs to be in mm³ not mm
-        We ask Extruder to do all the work but we need to pass in the relevant data.
-        NOTE we need to do this before we segment the line (for deltas)
-    */
-    if(!isnan(delta_e) && gcode->has_g && gcode->g == 1) {
-        float data[2]= {delta_e, rate_mm_s / millimeters_of_travel};
-        if(PublicData::set_value(extruder_checksum, target_checksum, data)) {
-            rate_mm_s *= data[1]; // adjust the feedrate
-        }
     }
 
     // We cut the line into smaller segments. This is only needed on a cartesian robot for zgrid, but always necessary for robots with rotational axes like Deltas.
@@ -1546,7 +1453,7 @@ bool Robot::append_arc(Gcode * gcode, const float target[], const float offset[]
     // Find the distance for this gcode
     float millimeters_of_travel = hypotf(angular_travel * radius, fabsf(linear_travel));
 
-    // We don't care about non-XYZ moves ( for example the extruder produces some of those )
+    // We don't care about non-XYZ moves
     if( millimeters_of_travel < 0.000001F ) {
         return false;
     }
