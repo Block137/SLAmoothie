@@ -52,7 +52,6 @@
 #include "libs/USBDevice/DFU.h"
 #include "libs/SDFAT.h"
 #include "StreamOutputPool.h"
-#include "ToolManager.h"
 
 #include "libs/Watchdog.h"
 

@@ -30,15 +30,11 @@ public:
 
 private:
 
-    void jog(string params, StreamOutput *stream);
-
     static void ls_command(string parameters, StreamOutput *stream );
     static void cd_command(string parameters, StreamOutput *stream );
-    static void delete_file_command(string parameters, StreamOutput *stream );
     static void pwd_command(string parameters, StreamOutput *stream );
     static void cat_command(string parameters, StreamOutput *stream );
     static void echo_command(string parameters, StreamOutput *stream );
-    static void rm_command(string parameters, StreamOutput *stream );
     static void mv_command(string parameters, StreamOutput *stream );
     static void mkdir_command(string parameters, StreamOutput *stream );
     static void upload_command(string parameters, StreamOutput *stream );
@@ -46,12 +42,10 @@ private:
     static void reset_command(string parameters, StreamOutput *stream );
     static void dfu_command(string parameters, StreamOutput *stream );
     static void help_command(string parameters, StreamOutput *stream );
-    static void get_command(string parameters, StreamOutput *stream );
     static void set_temp_command(string parameters, StreamOutput *stream );
     static void calc_thermistor_command( string parameters, StreamOutput *stream);
     static void print_thermistors_command( string parameters, StreamOutput *stream);
     static void md5sum_command( string parameters, StreamOutput *stream);
-    static void grblDP_command( string parameters, StreamOutput *stream);
 
     static void switch_command(string parameters, StreamOutput *stream );
     static void mem_command(string parameters, StreamOutput *stream );
@@ -62,8 +56,6 @@ private:
     static void save_command( string parameters, StreamOutput *stream);
 
     static void remount_command( string parameters, StreamOutput *stream);
-
-    static void test_command( string parameters, StreamOutput *stream);
 
     typedef void (*PFUNC)(string parameters, StreamOutput *stream);
     typedef struct {

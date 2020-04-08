@@ -84,7 +84,7 @@ void Player::on_halt(void* argument)
 	if(argument == nullptr && this->suspended) {
 		// clean up from suspend
 		this->suspended= false;
-		THEROBOT->pop_state();
+//		THEROBOT->pop_state();
 		this->saved_temperatures.clear();
 		this->was_playing_file= false;
 		this->suspend_loops= 0;
@@ -232,7 +232,7 @@ void Player::on_gcode_received(void *argument)
             if(this->suspended) {
                 // clean up
                 this->suspended= false;
-                THEROBOT->pop_state();
+//                THEROBOT->pop_state();
                 this->saved_temperatures.clear();
                 this->was_playing_file= false;
                 this->suspend_loops= 0;
@@ -557,15 +557,13 @@ void Player::suspend_part2()
 
     THEKERNEL->streams->printf("// Saving current state...\n");
 
-    // save current XYZ position in WCS
-    Robot::wcs_t mpos= THEROBOT->get_axis_position();
-    Robot::wcs_t wpos= THEROBOT->mcs2wcs(mpos);
-    saved_position[0]= std::get<X_AXIS>(wpos);
-    saved_position[1]= std::get<Y_AXIS>(wpos);
-    saved_position[2]= std::get<Z_AXIS>(wpos);
+    // save current XYZ position
+    saved_position[0]= THEROBOT->get_axis_position(X_AXIS);
+    saved_position[1]= THEROBOT->get_axis_position(Y_AXIS);
+    saved_position[2]= THEROBOT->get_axis_position(Z_AXIS);
 
     // save state use M120
-    THEROBOT->push_state();
+//    THEROBOT->push_state();
 
     // TODO retract by optional amount...
 
@@ -653,7 +651,7 @@ void Player::resume_command(string parameters, StreamOutput *stream )
             if(THEKERNEL->is_halted()) {
                 // abort temp wait and rest of resume
                 THEKERNEL->streams->printf("Resume aborted by kill\n");
-                THEROBOT->pop_state();
+//                THEROBOT->pop_state();
                 this->saved_temperatures.clear();
                 suspended= false;
                 return;
@@ -666,7 +664,7 @@ void Player::resume_command(string parameters, StreamOutput *stream )
 
     if(THEKERNEL->is_halted()) {
         THEKERNEL->streams->printf("Resume aborted by kill\n");
-        THEROBOT->pop_state();
+//        THEROBOT->pop_state();
         suspended= false;
         return;
     }
@@ -682,12 +680,11 @@ void Player::resume_command(string parameters, StreamOutput *stream )
 
     // Restore position
     stream->printf("// Restoring saved XYZ positions and state...\n");
-    THEROBOT->pop_state();
+//    THEROBOT->pop_state();
     bool abs_mode= THEROBOT->absolute_mode; // what mode we were in
     // force absolute mode for restoring position, then set to the saved relative/absolute mode
     THEROBOT->absolute_mode= true;
     {
-        // NOTE position was saved in WCS (for tool change which may change WCS expecially the Z)
         char buf[128];
         snprintf(buf, sizeof(buf), "G0 X%f Y%f Z%f", saved_position[0], saved_position[1], saved_position[2]);
         struct SerialMessage message;

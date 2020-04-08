@@ -198,8 +198,6 @@ try_again:
                                     return;
                                 }
                             }
-                            // makes it handle the parameters as a machine position
-                            THEROBOT->next_command_is_MCS= true;
 
                         } else if(gcode->g == 1) {
                             // optimize G1 to send ok immediately (one per line) before it is planned
@@ -287,30 +285,6 @@ try_again:
                                 string str= single_command.substr(4) + possible_command;
                                 PublicData::set_value( panel_checksum, panel_display_message_checksum, &str );
                                 delete gcode;
-                                new_message.stream->printf("ok\r\n");
-                                return;
-                            }
-
-                            case 1000: // M1000 is a special command that will pass thru the raw lowercased command to the simpleshell (for hosts that do not allow such things)
-                            {
-                                // reconstruct entire command line again
-                                string str= single_command.substr(5) + possible_command;
-                                while(is_whitespace(str.front())){ str= str.substr(1); } // strip leading whitespace
-
-                                delete gcode;
-
-                                if(str.empty()) {
-                                    SimpleShell::parse_command("help", "", new_message.stream);
-
-                                }else{
-                                    string args= lc(str);
-                                    string cmd = shift_parameter(args);
-                                    // find command and execute it
-                                    if(!SimpleShell::parse_command(cmd.c_str(), args, new_message.stream)) {
-                                        new_message.stream->printf("Command not found: %s\n", cmd.c_str());
-                                    }
-                                }
-
                                 new_message.stream->printf("ok\r\n");
                                 return;
                             }
