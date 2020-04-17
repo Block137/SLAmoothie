@@ -27,7 +27,7 @@
 #include "BaseSolution.h"
 #include "EndstopsPublicAccess.h"
 #include "Configurator.h"
-#include "SimpleShell.h"
+//#include "SimpleShell.h"
 #include "TemperatureControlPublicAccess.h"
 
 #ifndef NO_TOOLS_LASER
@@ -46,6 +46,8 @@
 
 #define base_stepping_frequency_checksum            CHECKSUM("base_stepping_frequency")
 #define microseconds_per_step_pulse_checksum        CHECKSUM("microseconds_per_step_pulse")
+#define dac_neutral_checksum                        CHECKSUM("dac_neutral")
+#define dac_step_size_checksum                      CHECKSUM("dac_step_size")
 #define disable_leds_checksum                       CHECKSUM("leds_disable")
 #define grbl_mode_checksum                          CHECKSUM("grbl_mode")
 #define feed_hold_enable_checksum                   CHECKSUM("enable_feed_hold")
@@ -151,18 +153,22 @@ Kernel::Kernel()
     }
 
     // Configure the step ticker
-    this->base_stepping_frequency = this->config->value(base_stepping_frequency_checksum)->by_default(100000)->as_number();
+    this->base_stepping_frequency     = this->config->value(base_stepping_frequency_checksum)->by_default(100000)->as_number();
     float microseconds_per_step_pulse = this->config->value(microseconds_per_step_pulse_checksum)->by_default(1)->as_number();
+    uint32_t dac_neutral               = this->config->value(dac_neutral_checksum)->by_default(32767)->as_number();
+    uint32_t dac_step_size             = this->config->value(dac_step_size_checksum)->by_default(8)->as_number();
+    if(dac_step_size < 1 || dac_step_size >= 4096) dac_step_size = 8;
 
     // Configure the step ticker
     this->step_ticker->set_frequency( this->base_stepping_frequency );
     this->step_ticker->set_unstep_time( microseconds_per_step_pulse );
+    this->step_ticker->set_dac_param(dac_neutral, dac_step_size);
 
     // Core modules
     this->add_module( this->conveyor       = new Conveyor()      );
     this->add_module( this->gcode_dispatch = new GcodeDispatch() );
     this->add_module( this->robot          = new Robot()         );
-    this->add_module( this->simpleshell    = new SimpleShell()   );
+//    this->add_module( this->simpleshell    = new SimpleShell()   );
 
     this->planner = new Planner();
     this->configurator = new Configurator();

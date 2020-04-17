@@ -10,12 +10,7 @@
 #include <array>
 
 #ifndef MAX_ROBOT_ACTUATORS
-    #ifdef CNC
-    #define MAX_ROBOT_ACTUATORS 3
-    #else
-    // includes 2 extruders
     #define MAX_ROBOT_ACTUATORS 4
-    #endif
 #endif
 
 #if MAX_ROBOT_ACTUATORS < 3 || MAX_ROBOT_ACTUATORS > 6
@@ -24,12 +19,12 @@
 
 #ifndef N_PRIMARY_AXIS
     // This may chnage and include ABC
-    #define N_PRIMARY_AXIS 3
+    #define N_PRIMARY_AXIS 2
 #endif
 
-#if N_PRIMARY_AXIS < 3 || N_PRIMARY_AXIS > MAX_ROBOT_ACTUATORS
-#error "N_PRIMARY_AXIS must be >= 3 and <= MAX_ROBOT_ACTUATORS"
-#endif
+//#if N_PRIMARY_AXIS < 3 || N_PRIMARY_AXIS > MAX_ROBOT_ACTUATORS
+//#error "N_PRIMARY_AXIS must be >= 3 and <= MAX_ROBOT_ACTUATORS"
+//#endif
 
 // Keep MAX_ROBOT_ACTUATORS as small as practical it impacts block size and therefore free memory.
 const size_t k_max_actuators = MAX_ROBOT_ACTUATORS;

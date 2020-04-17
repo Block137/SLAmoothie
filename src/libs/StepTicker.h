@@ -18,6 +18,9 @@
 #include "ActuatorCoordinates.h"
 #include "TSRingBuffer.h"
 
+#include "gpio.h"   //for SPI
+#include "mbed.h"   //
+
 class StepperMotor;
 class Block;
 
@@ -25,11 +28,17 @@ class Block;
 #define STEPTICKER_FPSCALE (1LL<<62)
 #define STEPTICKER_FROMFP(x) ((float)(x)/STEPTICKER_FPSCALE)
 
+#define LATCH   1
+#define UNLATCH 0
+
 class StepTicker{
     public:
         StepTicker();
         ~StepTicker();
         void set_frequency( float frequency );
+        void set_dac_param(int32_t _dac_neutral, int32_t _dac_step_size);   //called by KERNEL
+        void configDAC8760(void);
+        int32_t get_dac_step_size() { return dac_step_size; }
         void set_unstep_time( float microseconds );
         int register_motor(StepperMotor* motor);
         float get_frequency() const { return frequency; }
@@ -37,6 +46,7 @@ class StepTicker{
         const Block *get_current_block() const { return current_block; }
 
         void step_tick (void);
+//        inline void step_dac(int32_t data_x, int32_t data_y);
         void handle_finish (void);
         void start();
 
@@ -48,6 +58,8 @@ class StepTicker{
     private:
         static StepTicker *instance;
 
+        mbed::SPI dac8760 = SPI(P0_18, P0_17, P0_15);   // SPI0 MOSI,MISO,SCK
+
         bool start_next_block();
 
         float frequency;
@@ -57,6 +69,9 @@ class StepTicker{
 
         Block *current_block;
         uint32_t current_tick{0};
+        uint32_t dac_neutral;
+        uint32_t dac_step_size;
+        uint32_t dac_data[2];
 
         struct {
             volatile bool running:1;

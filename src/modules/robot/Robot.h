@@ -20,7 +20,8 @@ using std::string;
 #include "nuts_bolts.h"
 
 class Gcode;
-class BaseSolution;
+//class BaseSolution;
+class GalvoSolution;
 class StepperMotor;
 
 // 9 WCS offsets
@@ -51,8 +52,8 @@ class Robot : public Module {
         uint8_t register_motor(StepperMotor*);
         uint8_t get_number_registered_motors() const {return n_motors; }
 
-        BaseSolution* arm_solution;                           // Selected Arm solution ( millimeters to step calculation )
-
+//        BaseSolution* arm_solution;                           // Selected Arm solution ( millimeters to step calculation )
+        GalvoSolution* arm_solution;
         // gets accessed by Panel, Endstops, ZProbe
         std::vector<StepperMotor*> actuators;
 
@@ -75,8 +76,8 @@ class Robot : public Module {
         };
 
         void load_config();
-        bool append_milestone(const float target[], float rate_mm_s);
-        bool append_line( Gcode* gcode, const float target[], float rate_mm_s);
+        bool append_milestone(const float target[], float rate_mm_s, bool galvo_move);
+        bool append_line( Gcode* gcode, const float target[], float rate_mm_s, bool galvo_move);
         void process_move(Gcode *gcode, enum MOTION_MODE_T);
         bool is_homed(uint8_t i) const;
 

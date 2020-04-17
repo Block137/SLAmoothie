@@ -198,11 +198,10 @@ void Block::calculate_trapezoid( float entryspeed, float exitspeed )
     //uint32_t plateau_ticks = total_move_ticks - acceleration_ticks - deceleration_ticks;
 
     // Now we figure out the acceleration value to reach EXACTLY maximum_rate(steps/s) in EXACTLY acceleration_ticks(ticks) amount of time in seconds
-    float acceleration_time = acceleration_ticks / STEP_TICKER_FREQUENCY;  // This can be moved into the operation below, separated for clarity, note we need to do this instead of using time_to_accelerate(seconds) directly because time_to_accelerate(seconds) and acceleration_ticks(seconds) do not have the same value anymore due to the rounding
-    float deceleration_time = deceleration_ticks / STEP_TICKER_FREQUENCY;
+    // note we need to do this instead of using time_to_accelerate(seconds) directly because time_to_accelerate(seconds) and acceleration_ticks(seconds) do not have the same value anymore due to the rounding
 
-    float acceleration_in_steps = (acceleration_time > 0.0F ) ? ( this->maximum_rate - initial_rate ) / acceleration_time : 0;
-    float deceleration_in_steps =  (deceleration_time > 0.0F ) ? ( this->maximum_rate - final_rate ) / deceleration_time : 0;
+    float acceleration_in_steps = (acceleration_ticks > 0 ) ? ( this->maximum_rate - initial_rate ) / (acceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
+    float deceleration_in_steps = (deceleration_ticks > 0 ) ? ( this->maximum_rate - final_rate )   / (deceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
 
     // we have a potential race condition here as we could get interrupted anywhere in the middle of this call, we need to lock
     // the updates to the blocks to get around it
@@ -318,8 +317,9 @@ void Block::prepare(float acceleration_in_steps, float deceleration_in_steps)
 
     for (uint8_t m = 0; m < n_actuators; m++) {
         uint32_t steps = this->steps[m];
-        this->tick_info[m].steps_to_move = steps;
         if(steps == 0) continue;
+
+        this->tick_info[m].steps_to_move = steps;
 
         float aratio = inv * steps;
 
@@ -348,18 +348,18 @@ void Block::prepare(float acceleration_in_steps, float deceleration_in_steps)
         this->tick_info[m].deceleration_change= -(int64_t)round(deceleration_per_tick * aratio);
         this->tick_info[m].plateau_rate= (int64_t)round(((this->maximum_rate * aratio) / STEP_TICKER_FREQUENCY) * STEPTICKER_FPSCALE);
 
-        #if 0
-        THEKERNEL->streams->printf("spt: %08lX %08lX, ac: %08lX %08lX, dc: %08lX %08lX, pr: %08lX %08lX\n",
-            (uint32_t)(this->tick_info[m].steps_per_tick>>32), // 2.62 fixed point
-            (uint32_t)(this->tick_info[m].steps_per_tick&0xFFFFFFFF), // 2.62 fixed point
-            (uint32_t)(this->tick_info[m].acceleration_change>>32), // 2.62 fixed point signed
-            (uint32_t)(this->tick_info[m].acceleration_change&0xFFFFFFFF), // 2.62 fixed point signed
-            (uint32_t)(this->tick_info[m].deceleration_change>>32), // 2.62 fixed point
-            (uint32_t)(this->tick_info[m].deceleration_change&0xFFFFFFFF), // 2.62 fixed point
-            (uint32_t)(this->tick_info[m].plateau_rate>>32), // 2.62 fixed point
-            (uint32_t)(this->tick_info[m].plateau_rate&0xFFFFFFFF) // 2.62 fixed point
-        );
-        #endif
+//        #if 0
+//        THEKERNEL->streams->printf("spt: %08lX %08lX, ac: %08lX %08lX, dc: %08lX %08lX, pr: %08lX %08lX\n",
+//            (uint32_t)(this->tick_info[m].steps_per_tick>>32), // 2.62 fixed point
+//            (uint32_t)(this->tick_info[m].steps_per_tick&0xFFFFFFFF), // 2.62 fixed point
+//            (uint32_t)(this->tick_info[m].acceleration_change>>32), // 2.62 fixed point signed
+//            (uint32_t)(this->tick_info[m].acceleration_change&0xFFFFFFFF), // 2.62 fixed point signed
+//            (uint32_t)(this->tick_info[m].deceleration_change>>32), // 2.62 fixed point
+//            (uint32_t)(this->tick_info[m].deceleration_change&0xFFFFFFFF), // 2.62 fixed point
+//            (uint32_t)(this->tick_info[m].plateau_rate>>32), // 2.62 fixed point
+//            (uint32_t)(this->tick_info[m].plateau_rate&0xFFFFFFFF) // 2.62 fixed point
+//        );
+//        #endif
     }
 }
 

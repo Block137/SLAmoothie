@@ -169,8 +169,8 @@ bool Endstops::load_config()
 
         size_t i;
         switch(toupper(axis[0])) {
-            case 'X': i= X_AXIS; break;
-            case 'Y': i= Y_AXIS; break;
+//            case 'X': i= X_AXIS; break;
+//            case 'Y': i= Y_AXIS; break;
             case 'Z': i= Z_AXIS; break;
             case 'A': i= A_AXIS; break;
             case 'B': i= B_AXIS; break;
@@ -362,18 +362,9 @@ void Endstops::home(axis_bitmap_t a)
     // Start moving the axes to the origin
     this->status = MOVING_TO_ENDSTOP_FAST;
 
-    if(axis_to_home[Z_AXIS]) {
-        // now home z
-        float delta[3] {0, 0, homing_axis[Z_AXIS].max_travel}; // we go the max z
-        if(homing_axis[Z_AXIS].home_direction) delta[Z_AXIS]= -delta[Z_AXIS];
-        THEROBOT->delta_move(delta, homing_axis[Z_AXIS].fast_rate, 3);
-        // wait for Z
-        THECONVEYOR->wait_for_idle();
-    }
-
     // potentially home A B and C individually
-    if(homing_axis.size() > 3){
-        for (size_t i = A_AXIS; i < homing_axis.size(); ++i) {
+    if(homing_axis.size() > 2){
+        for (size_t i = Z_AXIS; i < homing_axis.size(); ++i) {
             if(axis_to_home[i]) {
                 // now home A B or C
                 float delta[i+1];
@@ -390,19 +381,9 @@ void Endstops::home(axis_bitmap_t a)
     // check that the endstops were hit and it did not stop short for some reason
     // if the endstop is not triggered then enter ALARM state
     // with deltas we check all three axis were triggered, but at least one of XYZ must be set to home
-    if(axis_to_home[X_AXIS] || axis_to_home[Y_AXIS] || axis_to_home[Z_AXIS]) {
-        for (size_t i = X_AXIS; i <= Z_AXIS; ++i) {
-            if(axis_to_home[i] && !homing_axis[i].pin_info->triggered) {
-                this->status = NOT_HOMING;
-                THEKERNEL->call_event(ON_HALT, nullptr);
-                return;
-            }
-        }
-    }
-
     // also check ABC
-    if(homing_axis.size() > 3){
-        for (size_t i = A_AXIS; i < homing_axis.size(); ++i) {
+    if(homing_axis.size() > 2){
+        for (size_t i = Z_AXIS; i < homing_axis.size(); ++i) {
             if(axis_to_home[i] && !homing_axis[i].pin_info->triggered) {
                 this->status = NOT_HOMING;
                 THEKERNEL->call_event(ON_HALT, nullptr);
@@ -411,9 +392,8 @@ void Endstops::home(axis_bitmap_t a)
         }
     }
 
-        // Only for non polar bots
-        // we did not complete movement the full distance if we hit the endstops
-        // TODO Maybe only reset axis involved in the homing cycle
+    // we did not complete movement the full distance if we hit the endstops
+    // TODO Maybe only reset axis involved in the homing cycle
     THEROBOT->reset_position_from_current_actuator_position();
 
     // Move back a small distance for all homing axis
@@ -422,34 +402,30 @@ void Endstops::home(axis_bitmap_t a)
     for (size_t i = 0; i < homing_axis.size(); ++i) delta[i]= 0;
 
     // use minimum feed rate of all axes that are being homed (sub optimal, but necessary)
-    float feed_rate= homing_axis[X_AXIS].slow_rate;
     for (auto& i : homing_axis) {
         int c= i.axis_index;
         if(axis_to_home[c]) {
             delta[c]= i.retract;
-            if(!i.home_direction) delta[c]= -delta[c];
-            feed_rate= std::min(i.slow_rate, feed_rate);
+            if(!i.home_direction) {delta[c]= -delta[c];}
+            THEROBOT->delta_move(delta, i.slow_rate, homing_axis.size());
+            // wait until finished
+            THECONVEYOR->wait_for_idle();
         }
     }
 
-    THEROBOT->delta_move(delta, feed_rate, homing_axis.size());
-    // wait until finished
-    THECONVEYOR->wait_for_idle();
-
     // Start moving the axes towards the endstops slowly
     this->status = MOVING_TO_ENDSTOP_SLOW;
+    for (size_t i = 0; i < homing_axis.size(); ++i) delta[i]= 0;
     for (auto& i : homing_axis) {
         int c= i.axis_index;
         if(axis_to_home[c]) {
             delta[c]= i.retract*2; // move further than we moved off to make sure we hit it cleanly
             if(i.home_direction) delta[c]= -delta[c];
-        }else{
-            delta[c]= 0;
+            THEROBOT->delta_move(delta, i.slow_rate, homing_axis.size());
+            // wait until finished
+            THECONVEYOR->wait_for_idle();
         }
     }
-    THEROBOT->delta_move(delta, feed_rate, homing_axis.size());
-    // wait until finished
-    THECONVEYOR->wait_for_idle();
 
     // we did not complete movement the full distance if we hit the endstops
     // TODO Maybe only reset axis involved in the homing cycle

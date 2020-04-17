@@ -60,7 +60,6 @@ extern "C" uint32_t  _sbrk(int size);
 
 // command lookup table
 const SimpleShell::ptentry_t SimpleShell::commands_table[] = {
-    {"ls",       SimpleShell::ls_command},
     {"cd",       SimpleShell::cd_command},
     {"pwd",      SimpleShell::pwd_command},
     {"cat",      SimpleShell::cat_command},
@@ -150,7 +149,6 @@ static uint32_t heapWalk(StreamOutput *stream, bool verbose)
 void SimpleShell::on_module_loaded()
 {
     this->register_for_event(ON_CONSOLE_LINE_RECEIVED);
-    this->register_for_event(ON_GCODE_RECEIVED);
     this->register_for_event(ON_SECOND_TICK);
 
     reset_delay_secs = 0;
@@ -163,18 +161,6 @@ void SimpleShell::on_second_tick(void *)
         if (--reset_delay_secs == 0) {
             system_reset(false);
         }
-    }
-}
-
-void SimpleShell::on_gcode_received(void *argument)
-{
-    Gcode *gcode = static_cast<Gcode *>(argument);
-    string args = get_arguments(gcode->get_command());
-
-    if (gcode->has_m && gcode->m == 20) { // list sd card
-        gcode->stream->printf("Begin file list\r\n");
-        ls_command("/sd", gcode->stream);
-        gcode->stream->printf("End file list\r\n");
     }
 }
 
@@ -201,7 +187,6 @@ void SimpleShell::on_console_line_received( void *argument )
         return;
     }
 
-    // it is a grbl compatible command
     if(possible_command[0] == '$' && possible_command.size() >= 2) {
         switch(possible_command[1]) {
             case 'X':
@@ -261,46 +246,6 @@ void SimpleShell::on_console_line_received( void *argument )
         }else if(!parse_command(cmd.c_str(), possible_command, new_message.stream)) {
             new_message.stream->printf("error:Unsupported command - %s\n", cmd.c_str());
         }
-    }
-}
-
-// Act upon an ls command
-// Convert the first parameter into an absolute path, then list the files in that path
-void SimpleShell::ls_command( string parameters, StreamOutput *stream )
-{
-    string path, opts;
-    while(!parameters.empty()) {
-        string s = shift_parameter( parameters );
-        if(s.front() == '-') {
-            opts.append(s);
-        } else {
-            path = s;
-            if(!parameters.empty()) {
-                path.append(" ");
-                path.append(parameters);
-            }
-            break;
-        }
-    }
-
-    path = absolute_from_relative(path);
-
-    DIR *d;
-    struct dirent *p;
-    d = opendir(path.c_str());
-    if (d != NULL) {
-        while ((p = readdir(d)) != NULL) {
-            stream->printf("%s", lc(string(p->d_name)).c_str());
-            if(p->d_isdir) {
-                stream->printf("/");
-            } else if(opts.find("-s", 0, 2) != string::npos) {
-                stream->printf(" %d", p->d_fsize);
-            }
-            stream->printf("\r\n");
-        }
-        closedir(d);
-    } else {
-        stream->printf("Could not open directory %s\r\n", path.c_str());
     }
 }
 
@@ -615,12 +560,9 @@ void SimpleShell::version_command( string parameters, StreamOutput *stream)
     uint32_t dev = getDeviceType();
     const char *mcu = (dev & 0x00100000) ? "LPC1769" : "LPC1768";
     stream->printf("Build version: %s, Build date: %s, MCU: %s, System Clock: %ldMHz\r\n", vers.get_build(), vers.get_build_date(), mcu, SystemCoreClock / 1000000);
-    #ifdef CNC
-    stream->printf("  CNC Build ");
-    #endif
-    #ifdef DISABLEMSD
+//    #ifdef DISABLEMSD
     stream->printf("  NOMSD Build\r\n");
-    #endif
+//    #endif
     stream->printf("%d axis\n", MAX_ROBOT_ACTUATORS);
     if(!(dev & 0x00100000)) {
         stream->printf("NOTICE: This MCU is deprecated, and cannot guarantee proper function\n");
@@ -791,7 +733,6 @@ void SimpleShell::help_command( string parameters, StreamOutput *stream )
     stream->printf("Commands:\r\n");
     stream->printf("version\r\n");
     stream->printf("mem [-v]\r\n");
-    stream->printf("ls [-s] [folder]\r\n");
     stream->printf("cd folder\r\n");
     stream->printf("pwd\r\n");
     stream->printf("cat file [limit] [-d 10]\r\n");

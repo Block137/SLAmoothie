@@ -23,7 +23,7 @@
 //#include "modules/communication/RBMTest.h"
 
 #include "modules/robot/Conveyor.h"
-#include "modules/utils/simpleshell/SimpleShell.h"
+//#include "modules/utils/simpleshell/SimpleShell.h"
 #include "modules/utils/configurator/Configurator.h"
 #include "modules/utils/currentcontrol/CurrentControl.h"
 #include "modules/utils/player/Player.h"
@@ -74,11 +74,11 @@ SDCard sd  __attribute__ ((section ("AHBSRAM0"))) (P0_9, P0_8, P0_7, P0_6);     
 
 USB u __attribute__ ((section ("AHBSRAM0")));
 USBSerial usbserial __attribute__ ((section ("AHBSRAM0"))) (&u);
-#ifndef DISABLEMSD
-USBMSD msc __attribute__ ((section ("AHBSRAM0"))) (&u, &sd);
-#else
+//#ifndef DISABLEMSD
+//USBMSD msc __attribute__ ((section ("AHBSRAM0"))) (&u, &sd);
+//#else
 USBMSD *msc= NULL;
-#endif
+//#endif
 
 SDFAT mounter __attribute__ ((section ("AHBSRAM0"))) ("sd", &sd);
 
@@ -101,7 +101,7 @@ void init() {
     Kernel* kernel = new Kernel();
 
     kernel->streams->printf("Smoothie Running @%ldMHz\r\n", SystemCoreClock / 1000000);
-    SimpleShell::version_command("", kernel->streams);
+//    SimpleShell::version_command("", kernel->streams);
 
     bool sdok= (sd.disk_initialize() == 0);
     if(!sdok) kernel->streams->printf("SDCard failed to initialize\r\n");
@@ -110,7 +110,7 @@ void init() {
         kernel->streams->printf("NETWORK is disabled\r\n");
     #endif
 
-#ifdef DISABLEMSD
+//#ifdef DISABLEMSD
     // attempt to be able to disable msd in config
     if(sdok && !kernel->config->value( disable_msd_checksum )->by_default(true)->as_bool()){
         // HACK to zero the memory USBMSD uses as it and its objects seem to not initialize properly in the ctor
@@ -122,7 +122,7 @@ void init() {
         msc= NULL;
         kernel->streams->printf("MSD is disabled\r\n");
     }
-#endif
+//#endif
 
     // Create and add main modules
     kernel->add_module( new(AHB0) Player() );
@@ -157,13 +157,13 @@ void init() {
     // Create and initialize USB stuff
     u.init();
 
-#ifdef DISABLEMSD
+//#ifdef DISABLEMSD
     if(sdok && msc != NULL){
         kernel->add_module( msc );
     }
-#else
-    kernel->add_module( &msc );
-#endif
+//#else
+//    kernel->add_module( &msc );
+//#endif
 
     kernel->add_module( &usbserial );
     if( kernel->config->value( second_usb_serial_enable_checksum )->by_default(false)->as_bool() ){

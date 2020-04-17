@@ -20,14 +20,14 @@
 #include <math.h>
 #include <mri.h>
 
-#ifdef STEPTICKER_DEBUG_PIN
+//#ifdef STEPTICKER_DEBUG_PIN
 // debug pins, only used if defined in src/makefile
-#include "gpio.h"
-GPIO stepticker_debug_pin(STEPTICKER_DEBUG_PIN);
-#define SET_STEPTICKER_DEBUG_PIN(n) {if(n) stepticker_debug_pin.set(); else stepticker_debug_pin.clear(); }
-#else
-#define SET_STEPTICKER_DEBUG_PIN(n)
-#endif
+//#include "gpio.h"
+//GPIO stepticker_debug_pin(STEPTICKER_DEBUG_PIN);
+//#define SET_STEPTICKER_DEBUG_PIN(n) {if(n) stepticker_debug_pin.set(); else stepticker_debug_pin.clear(); }
+//#else
+//#define SET_STEPTICKER_DEBUG_PIN(n)
+//#endif
 
 StepTicker *StepTicker::instance;
 
@@ -55,11 +55,19 @@ StepTicker::StepTicker()
     this->running = false;
     this->current_block = nullptr;
 
-    #ifdef STEPTICKER_DEBUG_PIN
+    this->dac_neutral = 32767;
+    this->dac_step_size = 8;
+    this->dac_data[0] = dac_neutral;
+    this->dac_data[1] = dac_neutral;
+    dac8760.format(8,0);   //support 4-16 bit, 8bit/mode0 is default    
+    dac8760.frequency(7500000);
+    
+
+//    #ifdef STEPTICKER_DEBUG_PIN
     // setup debug pin if defined
-    stepticker_debug_pin.output();
-    stepticker_debug_pin= 0;
-    #endif
+//    stepticker_debug_pin.output();
+//    stepticker_debug_pin= 0;
+//    #endif
 }
 
 StepTicker::~StepTicker()
@@ -154,68 +162,125 @@ void StepTicker::step_tick (void)
     }
 
     bool still_moving= false;
-    // foreach motor, if it is active see if time to issue a step to that motor
-    for (uint8_t m = 0; m < num_motors; m++) {
-        if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
+    if(current_block->primary_axis) {
+        // foreach motor, if it is active see if time to issue a step to that motor
+        for (uint8_t m = 0; m <= 1; m++) {
+            if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
 
-        current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
+            current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
 
-        if(current_tick == current_block->tick_info[m].next_accel_event) {
-            if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
-                current_block->tick_info[m].acceleration_change = 0;
-                if(current_block->decelerate_after < current_block->total_move_ticks) {
-                    current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
-                    if(current_tick != current_block->decelerate_after) { // We are plateauing
-                        // steps/sec / tick frequency to get steps per tick
-                        current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
+            if(current_tick == current_block->tick_info[m].next_accel_event) {
+                if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
+                    current_block->tick_info[m].acceleration_change = 0;
+                    if(current_block->decelerate_after < current_block->total_move_ticks) {
+                        current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
+                        if(current_tick != current_block->decelerate_after) { // We are plateauing
+                            // steps/sec / tick frequency to get steps per tick
+                            current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
+                        }
                     }
+                }
+
+                if(current_tick == current_block->decelerate_after) { // We start decelerating
+                    current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
                 }
             }
 
-            if(current_tick == current_block->decelerate_after) { // We start decelerating
-                current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
+            // protect against rounding errors and such
+            if(current_block->tick_info[m].steps_per_tick <= 0) {
+                current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
+                current_block->tick_info[m].steps_per_tick = 0;
             }
-        }
 
-        // protect against rounding errors and such
-        if(current_block->tick_info[m].steps_per_tick <= 0) {
-            current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
-            current_block->tick_info[m].steps_per_tick = 0;
-        }
+            current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
 
-        current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
+            if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
+                current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
+                ++current_block->tick_info[m].step_count;
 
-        if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
-            current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
-            ++current_block->tick_info[m].step_count;
+                dac_data[m] = (motor[m]->virt_step() * dac_step_size + dac_neutral);
 
-            // step the motor
-            bool ismoving= motor[m]->step(); // returns false if the moving flag was set to false externally (probes, endstops etc)
-            // we stepped so schedule an unstep
-            unstep.set(m);
-
-            if(!ismoving || current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
-                // done
-                current_block->tick_info[m].steps_to_move = 0;
-                motor[m]->stop_moving(); // let motor know it is no longer moving
+                if(current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
+                    // done
+                    current_block->tick_info[m].steps_to_move = 0;
+                    motor[m]->stop_moving(); // let motor know it is no longer moving
+                }
             }
+            // see if any motors are still moving after this tick
+            if(motor[m]->is_moving()) still_moving= true;
         }
-
-        // see if any motors are still moving after this tick
-        if(motor[m]->is_moving()) still_moving= true;
+//        step_dac(dac_data[0], dac_data[1]);
+        motor[0]->latch(UNLATCH);
+        dac8760.write(0x01);
+        dac8760.write(dac_data[1] >> 8);
+        dac8760.write(dac_data[1]);
+        dac8760.write(0x01);
+        dac8760.write(dac_data[0] >> 8);
+        dac8760.write(dac_data[0]);
+        motor[0]->latch(LATCH);
     }
+    else{
+        // foreach motor, if it is active see if time to issue a step to that motor
+        for (uint8_t m = 2; m < num_motors; m++) {
+            if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
 
+            current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
+
+            if(current_tick == current_block->tick_info[m].next_accel_event) {
+                if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
+                    current_block->tick_info[m].acceleration_change = 0;
+                    if(current_block->decelerate_after < current_block->total_move_ticks) {
+                        current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
+                        if(current_tick != current_block->decelerate_after) { // We are plateauing
+                            // steps/sec / tick frequency to get steps per tick
+                            current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
+                        }
+                    }
+                }
+
+                if(current_tick == current_block->decelerate_after) { // We start decelerating
+                    current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
+                }
+            }
+
+            // protect against rounding errors and such
+            if(current_block->tick_info[m].steps_per_tick <= 0) {
+                current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
+                current_block->tick_info[m].steps_per_tick = 0;
+            }
+
+            current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
+
+            if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
+                current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
+                ++current_block->tick_info[m].step_count;
+
+                // step the motor
+                bool ismoving= motor[m]->step(); // returns false if the moving flag was set to false externally (probes, endstops etc)
+                // we stepped so schedule an unstep
+                unstep.set(m);
+
+                if(!ismoving || current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
+                    // done
+                    current_block->tick_info[m].steps_to_move = 0;
+                    motor[m]->stop_moving(); // let motor know it is no longer moving
+                }
+            }
+
+            // see if any motors are still moving after this tick
+            if(motor[m]->is_moving()) still_moving= true;
+        }
+        // We may have set a pin on in this tick, now we reset the timer to set it off
+        // Note there could be a race here if we run another tick before the unsteps have happened,
+        // right now it takes about 3-4us but if the unstep were near 10uS or greater it would be an issue
+        // also it takes at least 2us to get here so even when set to 1us pulse width it will still be about 3us
+        if( unstep.any()) {
+            LPC_TIM1->TCR = 3;
+            LPC_TIM1->TCR = 1;
+        }
+    }
     // do this after so we start at tick 0
     current_tick++; // count number of ticks
-
-    // We may have set a pin on in this tick, now we reset the timer to set it off
-    // Note there could be a race here if we run another tick before the unsteps have happened,
-    // right now it takes about 3-4us but if the unstep were near 10uS or greater it would be an issue
-    // also it takes at least 2us to get here so even when set to 1us pulse width it will still be about 3us
-    if( unstep.any()) {
-        LPC_TIM1->TCR = 3;
-        LPC_TIM1->TCR = 1;
-    }
 
 
     // see if any motors are still moving
@@ -283,4 +348,36 @@ int StepTicker::register_motor(StepperMotor* m)
 {
     motor[num_motors++] = m;
     return num_motors - 1;
+}
+
+void StepTicker::configDAC8760(void) {
+    dac8760.write(0x55);    //control, enable DaisyChain but not enabled output
+    dac8760.write(0x01);
+    dac8760.write(0xEA);
+    motor[0]->latch(UNLATCH);
+    dac8760.write(0x55);    //control, enable DaisyChain but not enabled output
+    dac8760.write(0x01);
+    dac8760.write(0xEA);
+    motor[0]->latch(LATCH);
+    dac8760.write(0x55);
+    dac8760.write(0x11);
+    dac8760.write(0xEA);
+    motor[0]->latch(UNLATCH);
+    dac8760.write(0x55);
+    dac8760.write(0x11);
+    dac8760.write(0xEA);
+    motor[0]->latch(LATCH);
+    dac8760.write(0x57);    //config, all default
+    dac8760.write(0x00);
+    dac8760.write(0x00);
+    motor[0]->latch(UNLATCH);
+    dac8760.write(0x57);
+    dac8760.write(0x00);
+    dac8760.write(0x00);
+    motor[0]->latch(LATCH);
+}
+
+void StepTicker::set_dac_param(int32_t _dac_neutral, int32_t _dac_step_size) {
+    if(_dac_neutral > 0)                                   { dac_neutral   = _dac_neutral; }
+    if(_dac_step_size > 0 && _dac_step_size < dac_neutral) { dac_step_size = _dac_step_size; }
 }

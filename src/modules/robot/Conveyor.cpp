@@ -169,7 +169,7 @@ void Conveyor::queue_head_block()
     queue.produce_head();
 
     // not sure if this is the correct place but we need to turn on the motors if they were not already on
-    THEKERNEL->call_event(ON_ENABLE, (void*)1); // turn all enable pins on
+//    THEKERNEL->call_event(ON_ENABLE, (void*)1); // turn all enable pins on
 }
 
 void Conveyor::check_queue(bool force)

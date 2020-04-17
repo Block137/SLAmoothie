@@ -23,7 +23,6 @@ class Player : public Module {
         Player();
 
         void on_module_loaded();
-        void on_console_line_received( void* argument );
         void on_main_loop( void* argument );
         void on_second_tick(void* argument);
         void on_get_public_data(void* argument);
@@ -32,6 +31,7 @@ class Player : public Module {
         void on_halt(void *argument);
 
     private:
+        static void ls_command(string parameters, StreamOutput *stream );
         void play_command( string parameters, StreamOutput* stream );
         void progress_command( string parameters, StreamOutput* stream );
         void abort_command( string parameters, StreamOutput* stream );

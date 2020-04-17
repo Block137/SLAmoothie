@@ -57,7 +57,6 @@ Player::Player()
 
 void Player::on_module_loaded()
 {
-    this->register_for_event(ON_CONSOLE_LINE_RECEIVED);
     this->register_for_event(ON_MAIN_LOOP);
     this->register_for_event(ON_SECOND_TICK);
     this->register_for_event(ON_GET_PUBLIC_DATA);
@@ -117,7 +116,12 @@ void Player::on_gcode_received(void *argument)
     Gcode *gcode = static_cast<Gcode *>(argument);
     string args = get_arguments(gcode->get_command());
     if (gcode->has_m) {
-        if (gcode->m == 21) { // Dummy code; makes Octoprint happy -- supposed to initialize SD card
+        if (gcode->m == 20) { // list sd card
+            gcode->stream->printf("Begin file list\r\n");
+            ls_command("/sd", gcode->stream);
+            gcode->stream->printf("End file list\r\n");
+        
+        } else if (gcode->m == 21) { // Dummy code; makes Octoprint happy -- supposed to initialize SD card
             mounter.remount();
             gcode->stream->printf("SD card ok\r\n");
 
@@ -238,38 +242,6 @@ void Player::on_gcode_received(void *argument)
                 this->suspend_loops= 0;
             }
         }
-    }
-}
-
-// When a new line is received, check if it is a command, and if it is, act upon it
-void Player::on_console_line_received( void *argument )
-{
-    if(THEKERNEL->is_halted()) return; // if in halted state ignore any commands
-
-    SerialMessage new_message = *static_cast<SerialMessage *>(argument);
-
-    string possible_command = new_message.message;
-
-    // ignore anything that is not lowercase or a letter
-    if(possible_command.empty() || !islower(possible_command[0]) || !isalpha(possible_command[0])) {
-        return;
-    }
-
-    string cmd = shift_parameter(possible_command);
-
-    //new_message.stream->printf("Received %s\r\n", possible_command.c_str());
-
-    // Act depending on command
-    if (cmd == "play"){
-        this->play_command( possible_command, new_message.stream );
-    }else if (cmd == "progress"){
-        this->progress_command( possible_command, new_message.stream );
-    }else if (cmd == "abort") {
-        this->abort_command( possible_command, new_message.stream );
-    }else if (cmd == "suspend") {
-        this->suspend_command( possible_command, new_message.stream );
-    }else if (cmd == "resume") {
-        this->resume_command( possible_command, new_message.stream );
     }
 }
 
@@ -711,4 +683,44 @@ void Player::resume_command(string parameters, StreamOutput *stream )
     }
 
    suspended= false;
+}
+
+// Act upon an ls command
+// Convert the first parameter into an absolute path, then list the files in that path
+void Player::ls_command( string parameters, StreamOutput *stream )
+{
+    string path, opts;
+    while(!parameters.empty()) {
+        string s = shift_parameter( parameters );
+        if(s.front() == '-') {
+            opts.append(s);
+        } else {
+            path = s;
+            if(!parameters.empty()) {
+                path.append(" ");
+                path.append(parameters);
+            }
+            break;
+        }
+    }
+
+    path = absolute_from_relative(path);
+
+    DIR *d;
+    struct dirent *p;
+    d = opendir(path.c_str());
+    if (d != NULL) {
+        while ((p = readdir(d)) != NULL) {
+            stream->printf("%s", lc(string(p->d_name)).c_str());
+            if(p->d_isdir) {
+                stream->printf("/");
+            } else if(opts.find("-s", 0, 2) != string::npos) {
+                stream->printf(" %d", p->d_fsize);
+            }
+            stream->printf("\r\n");
+        }
+        closedir(d);
+    } else {
+        stream->printf("Could not open directory %s\r\n", path.c_str());
+    }
 }
