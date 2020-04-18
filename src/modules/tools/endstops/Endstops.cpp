@@ -53,11 +53,6 @@
 enum DEFNS {MIN_PIN, MAX_PIN, MAX_TRAVEL, FAST_RATE, SLOW_RATE, RETRACT, DIRECTION, MIN, MAX, LIMIT, NDEFNS};
 
 // global config settings
-#define corexy_homing_checksum           CHECKSUM("corexy_homing")
-#define delta_homing_checksum            CHECKSUM("delta_homing")
-#define rdelta_homing_checksum           CHECKSUM("rdelta_homing")
-#define scara_homing_checksum            CHECKSUM("scara_homing")
-
 #define endstop_debounce_count_checksum  CHECKSUM("endstop_debounce_count")
 #define endstop_debounce_ms_checksum     CHECKSUM("endstop_debounce_ms")
 

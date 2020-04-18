@@ -227,13 +227,13 @@ int main()
 {
     init();
 
-//    uint16_t cnt= 0;
+    uint16_t cnt= 0;
     // Main loop
     while(1){
-        if(THEKERNEL->is_using_leds()) {
+//        if(THEKERNEL->is_using_leds()) {
             // flash led 2 to show we are alive
-//            leds[1]= (cnt++ & 0x1000) ? 1 : 0;
-        }
+        leds[1]= (cnt++ & 0x1000) ? 1 : 0;
+//        }
         THEKERNEL->call_event(ON_MAIN_LOOP);
         THEKERNEL->call_event(ON_IDLE);
     }

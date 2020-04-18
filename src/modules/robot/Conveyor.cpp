@@ -114,15 +114,22 @@ void Conveyor::on_idle(void*)
 // see if we are idle
 // this checks the block queue is empty, and that the step queue is empty and
 // checks that all motors are no longer moving
+
+#include "gpio.h"
+extern GPIO leds[];
 bool Conveyor::is_idle() const
 {
     if(queue.is_empty()) {
         for(auto &a : THEROBOT->actuators) {
-            if(a->is_moving()) return false;
+            if(a->is_moving()) {
+                leds[2]= 1;
+                return false;
+            }
         }
+        leds[2]= 0;
         return true;
     }
-
+    leds[2]= 1;
     return false;
 }
 

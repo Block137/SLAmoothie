@@ -18,8 +18,4 @@ class GalvoSolution : public BaseSolution {
     private:
         float mirrors_distance; // distance between 2 mirrors
         float galvo_height; // distance from print surface
-//        float galvo_range; // sweep angle at full DAC range
-//        uint8_t step_size;
-//        uint8_t dac_resoultion; // DAC8760 is 16 bit
-
 };

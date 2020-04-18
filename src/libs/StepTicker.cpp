@@ -163,6 +163,7 @@ void StepTicker::step_tick (void)
 
     bool still_moving= false;
     if(current_block->primary_axis) {
+        bool has_tick = false;
         // foreach motor, if it is active see if time to issue a step to that motor
         for (uint8_t m = 0; m <= 1; m++) {
             if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
@@ -198,7 +199,8 @@ void StepTicker::step_tick (void)
                 current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
                 ++current_block->tick_info[m].step_count;
 
-                dac_data[m] = (motor[m]->virt_step() * dac_step_size + dac_neutral);
+                dac_data[m] = (motor[m]->virt_step() * dac_step_size) + dac_neutral;
+                has_tick = true;
 
                 if(current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
                     // done
@@ -209,15 +211,16 @@ void StepTicker::step_tick (void)
             // see if any motors are still moving after this tick
             if(motor[m]->is_moving()) still_moving= true;
         }
-//        step_dac(dac_data[0], dac_data[1]);
-        motor[0]->latch(UNLATCH);
-        dac8760.write(0x01);
-        dac8760.write(dac_data[1] >> 8);
-        dac8760.write(dac_data[1]);
-        dac8760.write(0x01);
-        dac8760.write(dac_data[0] >> 8);
-        dac8760.write(dac_data[0]);
-        motor[0]->latch(LATCH);
+        if(has_tick) {
+            motor[0]->latch(UNLATCH);
+            dac8760.write(0x01);
+            dac8760.write(dac_data[1] >> 8);
+            dac8760.write(dac_data[1]);
+            dac8760.write(0x01);
+            dac8760.write(dac_data[0] >> 8);
+            dac8760.write(dac_data[0]);
+            motor[0]->latch(LATCH);
+        }
     }
     else{
         // foreach motor, if it is active see if time to issue a step to that motor

@@ -18,40 +18,20 @@ GalvoSolution::GalvoSolution(Config* config)
     mirrors_distance = config->value(mirrors_distance_checksum)->by_default(7.5f)->as_number();
     // distance from print surface (mm)
     galvo_height = config->value(galvo_height_checksum)->by_default(559.8076f)->as_number();
-    // DAC resolution (bit)
-//    dac_resoultion      = config->value(dac_resolution_checksum)->by_default(16)->as_number();
 }
 
 void GalvoSolution::cartesian_to_actuator(const float cartesian_mm[], ActuatorCoordinates &actuator_mm ) const
 {
-    actuator_mm[BETA_STEPPER ] = atanf(cartesian_mm[Y_AXIS] / galvo_height);
+    float temp = atanf(cartesian_mm[Y_AXIS] / this->galvo_height);
 
-    actuator_mm[ALPHA_STEPPER] = RAD2DEG * atanf(cartesian_mm[X_AXIS] / ((galvo_height/ cosf(actuator_mm[BETA_STEPPER ]) ) + mirrors_distance)  );
-    actuator_mm[BETA_STEPPER] *= RAD2DEG;
-    actuator_mm[GAMMA_STEPPER] = cartesian_mm[Z_AXIS];
-#if MAX_ROBOT_ACTUATORS > 3
-    actuator_mm[DELTA_STEPPER] = cartesian_mm[A_AXIS];
-    #if MAX_ROBOT_ACTUATORS > 4
-        actuator_mm[EPSILON_STEPPER] = cartesian_mm[B_AXIS];
-        #if MAX_ROBOT_ACTUATORS > 5
-            actuator_mm[ZETA_STEPPER] = cartesian_mm[C_AXIS];
-        #endif
-    #endif
-#endif
+    actuator_mm[ALPHA_STEPPER] = RAD2DEG * atanf(cartesian_mm[X_AXIS] / ((this->galvo_height/ cosf(temp) ) + this->mirrors_distance)  );
+    actuator_mm[BETA_STEPPER]  = RAD2DEG * temp;
+//    actuator_mm[GAMMA_STEPPER] = cartesian_mm[Z_AXIS];
 }
 
 void GalvoSolution::actuator_to_cartesian(const ActuatorCoordinates &actuator_mm, float cartesian_mm[] ) const
 {
-    cartesian_mm[Y_AXIS] =    galvo_height * tanf(actuator_mm[BETA_STEPPER]);
-    cartesian_mm[X_AXIS] = ( (galvo_height / cosf(actuator_mm[BETA_STEPPER]) ) + mirrors_distance) * tanf(actuator_mm[ALPHA_STEPPER]);
-    cartesian_mm[Z_AXIS] = actuator_mm[GAMMA_STEPPER];
-#if MAX_ROBOT_ACTUATORS > 3
-    cartesian_mm[A_AXIS] = actuator_mm[DELTA_STEPPER];
-    #if MAX_ROBOT_ACTUATORS > 4
-    cartesian_mm[B_AXIS] = actuator_mm[EPSILON_STEPPER];
-        #if MAX_ROBOT_ACTUATORS > 5
-    cartesian_mm[C_AXIS] = actuator_mm[ZETA_STEPPER];
-        #endif
-    #endif
-#endif
+    cartesian_mm[Y_AXIS] =    this->galvo_height * tanf(actuator_mm[BETA_STEPPER]);
+    cartesian_mm[X_AXIS] = ( (this->galvo_height / cosf(actuator_mm[BETA_STEPPER]) ) + this->mirrors_distance) * tanf(actuator_mm[ALPHA_STEPPER]);
+//    cartesian_mm[Z_AXIS] = actuator_mm[GAMMA_STEPPER];
 }

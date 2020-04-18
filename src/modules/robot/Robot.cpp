@@ -123,7 +123,7 @@ void Robot::load_config()
 //    int solution_checksum = get_checksum(THEKERNEL->config->value(arm_solution_checksum)->by_default("cartesian")->as_string());
     // Note checksums are not const expressions when in debug mode, so don't use switch
 //    if(solution_checksum == galvo_checksum) {
-//        this->arm_solution = new GalvoSolution(THEKERNEL->config);
+    this->arm_solution = new GalvoSolution(THEKERNEL->config);
 //    } else {
 //        this->arm_solution = new CartesianSolution(THEKERNEL->config);
 //    }
@@ -260,7 +260,7 @@ void Robot::print_position(uint8_t subcode, std::string& res) const
     // M114 just does it the old way uses machine_position and does inverse transforms to get the requested position
     uint32_t n = 0;
     char buf[64];
-    n = snprintf(buf, sizeof(buf), "MP: X:%1.4f Y:%1.4f Z:%1.4f", machine_position[X_AXIS], machine_position[Y_AXIS], machine_position[Z_AXIS]);
+    n = snprintf(buf, sizeof(buf), "MP: X:%1.4f Y:%1.4f Z:%1.4f A:%1.4f", machine_position[X_AXIS], machine_position[Y_AXIS], machine_position[Z_AXIS], machine_position[A_AXIS]);
 
     if(n > sizeof(buf)) n= sizeof(buf);
     res.append(buf, n);
@@ -347,200 +347,201 @@ void Robot::on_gcode_received(void *argument)
                 return;
             }
         }
-
-    } else if( gcode->has_m) {
-        switch( gcode->m ) {
-            // case 0: // M0 feed hold, (M0.1 is release feed hold, except we are in feed hold)
-            //     if(THEKERNEL->is_grbl_mode()) THEKERNEL->set_feed_hold(gcode->subcode == 0);
-            //     break;
-            case 17:
-                if(gcode->subcode == 1) {
-                    THEKERNEL->step_ticker->configDAC8760();
-                }
-                else {
-                    THEKERNEL->call_event(ON_ENABLE, (void*)1); // turn all enable pins on
-                }
-                break;
-
-            case 18: // this allows individual motors to be turned off, no parameters falls through to turn all off
-                if(gcode->get_num_args() > 0) {
-                    // bitmap of motors to turn off, where bit 1:X, 2:Y, 3:Z, 4:A, 5:B, 6:C
-                    uint32_t bm= 0;
-                    for (int i = 0; i < n_motors; ++i) {
-                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-3));
-                        if(gcode->has_letter(axis)) bm |= (0x02<<i); // set appropriate bit
+    } 
+    else {
+        if( gcode->has_m) {
+            switch( gcode->m ) {
+                // case 0: // M0 feed hold, (M0.1 is release feed hold, except we are in feed hold)
+                //     if(THEKERNEL->is_grbl_mode()) THEKERNEL->set_feed_hold(gcode->subcode == 0);
+                //     break;
+                case 17:
+                    if(gcode->subcode == 1) {
+                        THEKERNEL->step_ticker->configDAC8760();
                     }
-
-                    THEKERNEL->conveyor->wait_for_idle();
-                    THEKERNEL->call_event(ON_ENABLE, (void *)bm);
+                    else {
+                        THEKERNEL->call_event(ON_ENABLE, (void*)1); // turn all enable pins on
+                    }
                     break;
-                }
-                // fall through
-            case 84:
-                THEKERNEL->conveyor->wait_for_idle();
-                THEKERNEL->call_event(ON_ENABLE, nullptr); // turn all enable pins off
-                break;
 
-            case 92: // M92 - set steps per mm
-                for (int i = 0; i < n_motors; ++i) {
-                    char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
-                    gcode->stream->printf("%c:%f ", axis, actuators[i]->get_steps_per_mm());
-                }
-                gcode->add_nl = true;
-                return;
-
-            case 114:{
-                std::string buf;
-                print_position(gcode->subcode, buf);
-                gcode->txt_after_ok.append(buf);
-                return;
-            }
-
-            case 203: // M203 Set maximum feedrates in mm/sec, M203.1 set maximum actuator feedrates
-                    if(gcode->get_num_args() == 0) {
-                        for (size_t i = X_AXIS; i <= Z_AXIS; i++) {
-                            gcode->stream->printf(" %c: %g ", 'X' + i, gcode->subcode == 0 ? this->max_speeds[i] : actuators[i]->get_max_rate());
+                case 18: // this allows individual motors to be turned off, no parameters falls through to turn all off
+                    if(gcode->get_num_args() > 0) {
+                        // bitmap of motors to turn off, where bit 1:X, 2:Y, 3:Z, 4:A, 5:B, 6:C
+                        uint32_t bm= 0;
+                        for (int i = 0; i < n_motors; ++i) {
+                            char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-3));
+                            if(gcode->has_letter(axis)) bm |= (0x02<<i); // set appropriate bit
                         }
-                        if(gcode->subcode == 1) {
-                            for (size_t i = A_AXIS; i < n_motors; i++) {
-                                gcode->stream->printf(" %c: %g ", 'A' + i - A_AXIS, actuators[i]->get_max_rate());
+
+                        THEKERNEL->conveyor->wait_for_idle();
+                        THEKERNEL->call_event(ON_ENABLE, (void *)bm);
+                        break;
+                    }
+                    // fall through
+                case 84:
+                    THEKERNEL->conveyor->wait_for_idle();
+                    THEKERNEL->call_event(ON_ENABLE, nullptr); // turn all enable pins off
+                    break;
+
+                case 92: // M92 - set steps per mm
+                    for (int i = 0; i < n_motors; ++i) {
+                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
+                        gcode->stream->printf("%c:%f ", axis, actuators[i]->get_steps_per_mm());
+                    }
+                    gcode->add_nl = true;
+                    return;
+
+                case 114:{
+                    std::string buf;
+                    print_position(gcode->subcode, buf);
+                    gcode->txt_after_ok.append(buf);
+                    return;
+                }
+
+                case 203: // M203 Set maximum feedrates in mm/sec, M203.1 set maximum actuator feedrates
+                        if(gcode->get_num_args() == 0) {
+                            for (size_t i = X_AXIS; i <= Z_AXIS; i++) {
+                                gcode->stream->printf(" %c: %g ", 'X' + i, gcode->subcode == 0 ? this->max_speeds[i] : actuators[i]->get_max_rate());
                             }
+                            if(gcode->subcode == 1) {
+                                for (size_t i = A_AXIS; i < n_motors; i++) {
+                                    gcode->stream->printf(" %c: %g ", 'A' + i - A_AXIS, actuators[i]->get_max_rate());
+                                }
+                            }else{
+                                gcode->stream->printf(" S: %g ", this->max_speed);
+                            }
+
+                            gcode->add_nl = true;
+
                         }else{
-                            gcode->stream->printf(" S: %g ", this->max_speed);
-                        }
-
-                        gcode->add_nl = true;
-
-                    }else{
-                        for (size_t i = X_AXIS; i <= Z_AXIS; i++) {
-                            if (gcode->has_letter('X' + i)) {
-                                float v= gcode->get_value('X'+i);
-                                if(gcode->subcode == 0) this->max_speeds[i]= v;
-                                else if(gcode->subcode == 1) actuators[i]->set_max_rate(v);
-                            }
-                        }
-
-                        if(gcode->subcode == 1) {
-                            // ABC axis only handle actuator max speeds
-                            for (size_t i = A_AXIS; i < n_motors; i++) {
-                                int c= 'A' + i - A_AXIS;
-                                if(gcode->has_letter(c)) {
-                                    float v= gcode->get_value(c);
-                                    actuators[i]->set_max_rate(v);
+                            for (size_t i = X_AXIS; i <= Z_AXIS; i++) {
+                                if (gcode->has_letter('X' + i)) {
+                                    float v= gcode->get_value('X'+i);
+                                    if(gcode->subcode == 0) this->max_speeds[i]= v;
+                                    else if(gcode->subcode == 1) actuators[i]->set_max_rate(v);
                                 }
                             }
 
-                        }else{
-                            if(gcode->has_letter('S')) max_speed= gcode->get_value('S');
-                        }
+                            if(gcode->subcode == 1) {
+                                // ABC axis only handle actuator max speeds
+                                for (size_t i = A_AXIS; i < n_motors; i++) {
+                                    int c= 'A' + i - A_AXIS;
+                                    if(gcode->has_letter(c)) {
+                                        float v= gcode->get_value(c);
+                                        actuators[i]->set_max_rate(v);
+                                    }
+                                }
 
-                        if(gcode->subcode == 1) check_max_actuator_speeds();
+                            }else{
+                                if(gcode->has_letter('S')) max_speed= gcode->get_value('S');
+                            }
+
+                            if(gcode->subcode == 1) check_max_actuator_speeds();
+                        }
+                        break;
+
+                case 204: // M204 Snnn - set default acceleration to nnn, Xnnn Ynnn Znnn sets axis specific acceleration
+                    if (gcode->has_letter('S')) {
+                        float acc = gcode->get_value('S'); // mm/s^2
+                        // enforce minimum
+                        if (acc < 1.0F) acc = 1.0F;
+                        this->default_acceleration = acc;
+                    }
+                    for (int i = 0; i < n_motors; ++i) {
+                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
+                        if(gcode->has_letter(axis)) {
+                            float acc = gcode->get_value(axis); // mm/s^2
+                            // enforce positive
+                            if (acc <= 0.0F) acc = NAN;
+                            actuators[i]->set_acceleration(acc);
+                        }
                     }
                     break;
 
-            case 204: // M204 Snnn - set default acceleration to nnn, Xnnn Ynnn Znnn sets axis specific acceleration
-                if (gcode->has_letter('S')) {
-                    float acc = gcode->get_value('S'); // mm/s^2
-                    // enforce minimum
-                    if (acc < 1.0F) acc = 1.0F;
-                    this->default_acceleration = acc;
-                }
-                for (int i = 0; i < n_motors; ++i) {
-                    char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
-                    if(gcode->has_letter(axis)) {
-                        float acc = gcode->get_value(axis); // mm/s^2
-                        // enforce positive
-                        if (acc <= 0.0F) acc = NAN;
-                        actuators[i]->set_acceleration(acc);
+                case 205: // M205 Xnnn - set junction deviation, Z - set Z junction deviation, Snnn - Set minimum planner speed
+                    if (gcode->has_letter('X')) {
+                        float jd = gcode->get_value('X');
+                        // enforce minimum
+                        if (jd < 0.0F)
+                            jd = 0.0F;
+                        THEKERNEL->planner->junction_deviation = jd;
                     }
-                }
-                break;
+                    if (gcode->has_letter('Z')) {
+                        float jd = gcode->get_value('Z');
+                        // enforce minimum, -1 disables it and uses regular junction deviation
+                        if (jd <= -1.0F)
+                            jd = NAN;
+                        THEKERNEL->planner->z_junction_deviation = jd;
+                    }
+                    if (gcode->has_letter('S')) {
+                        float mps = gcode->get_value('S');
+                        // enforce minimum
+                        if (mps < 0.0F)
+                            mps = 0.0F;
+                        THEKERNEL->planner->minimum_planner_speed = mps;
+                    }
+                    break;
 
-            case 205: // M205 Xnnn - set junction deviation, Z - set Z junction deviation, Snnn - Set minimum planner speed
-                if (gcode->has_letter('X')) {
-                    float jd = gcode->get_value('X');
-                    // enforce minimum
-                    if (jd < 0.0F)
-                        jd = 0.0F;
-                    THEKERNEL->planner->junction_deviation = jd;
-                }
-                if (gcode->has_letter('Z')) {
-                    float jd = gcode->get_value('Z');
-                    // enforce minimum, -1 disables it and uses regular junction deviation
-                    if (jd <= -1.0F)
-                        jd = NAN;
-                    THEKERNEL->planner->z_junction_deviation = jd;
-                }
-                if (gcode->has_letter('S')) {
-                    float mps = gcode->get_value('S');
-                    // enforce minimum
-                    if (mps < 0.0F)
-                        mps = 0.0F;
-                    THEKERNEL->planner->minimum_planner_speed = mps;
-                }
-                break;
+                case 220: // M220 - speed override percentage
+                    if (gcode->has_letter('S')) {
+                        float factor = gcode->get_value('S');
+                        // enforce minimum 10% speed
+                        if (factor < 10.0F)
+                            factor = 10.0F;
+                        // enforce maximum 10x speed
+                        if (factor > 1000.0F)
+                            factor = 1000.0F;
 
-            case 220: // M220 - speed override percentage
-                if (gcode->has_letter('S')) {
-                    float factor = gcode->get_value('S');
-                    // enforce minimum 10% speed
-                    if (factor < 10.0F)
-                        factor = 10.0F;
-                    // enforce maximum 10x speed
-                    if (factor > 1000.0F)
-                        factor = 1000.0F;
+                        seconds_per_minute = 6000.0F / factor;
+                    } else {
+                        gcode->stream->printf("Speed factor at %6.2f %%\n", 6000.0F / seconds_per_minute);
+                    }
+                    break;
 
-                    seconds_per_minute = 6000.0F / factor;
-                } else {
-                    gcode->stream->printf("Speed factor at %6.2f %%\n", 6000.0F / seconds_per_minute);
-                }
-                break;
+                case 400: // wait until all moves are done up to this point
+                    THEKERNEL->conveyor->wait_for_idle();
+                    break;
 
-            case 400: // wait until all moves are done up to this point
-                THEKERNEL->conveyor->wait_for_idle();
-                break;
-
-            case 500: // M500 saves some volatile settings to config override file
-            case 503: { // M503 just prints the settings
-                gcode->stream->printf(";Steps per unit:\nM92 ");
-                for (int i = 0; i < n_motors; ++i) {
-                    char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
-                    gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_steps_per_mm());
-                }
-                gcode->stream->printf("\n");
-
-                // only print if not NAN
-                gcode->stream->printf(";Acceleration mm/sec^2:\nM204 S%1.5f ", default_acceleration);
-                for (int i = 0; i < n_motors; ++i) {
-                    char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
-                    if(!isnan(actuators[i]->get_acceleration())) gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_acceleration());
-                }
-                gcode->stream->printf("\n");
-
-                gcode->stream->printf(";X- Junction Deviation, Z- Z junction deviation, S - Minimum Planner speed mm/sec:\nM205 X%1.5f Z%1.5f S%1.5f\n", THEKERNEL->planner->junction_deviation, isnan(THEKERNEL->planner->z_junction_deviation)?-1:THEKERNEL->planner->z_junction_deviation, THEKERNEL->planner->minimum_planner_speed);
-
-                gcode->stream->printf(";Max cartesian feedrates in mm/sec:\nM203 X%1.5f Y%1.5f Z%1.5f S%1.5f\n", this->max_speeds[X_AXIS], this->max_speeds[Y_AXIS], this->max_speeds[Z_AXIS], this->max_speed);
-
-                gcode->stream->printf(";Max actuator feedrates in mm/sec:\nM203.1 ");
-                for (int i = 0; i < n_motors; ++i) {
-                    char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
-                    gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_max_rate());
-                }
-                gcode->stream->printf("\n");
-
-                // get or save any arm solution specific optional values
-                BaseSolution::arm_options_t options;
-                if(arm_solution->get_optional(options) && !options.empty()) {
-                    gcode->stream->printf(";Optional arm solution specific settings:\nM665");
-                    for(auto &i : options) {
-                        gcode->stream->printf(" %c%1.4f", i.first, i.second);
+                case 500: // M500 saves some volatile settings to config override file
+                case 503: // M503 just prints the settings
+                    gcode->stream->printf(";Steps per unit:\nM92 ");
+                    for (int i = 0; i < n_motors; ++i) {
+                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
+                        gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_steps_per_mm());
                     }
                     gcode->stream->printf("\n");
-                }
-            }
-            break;
-        }
-    }
+
+                    // only print if not NAN
+                    gcode->stream->printf(";Acceleration mm/sec^2:\nM204 S%1.5f ", default_acceleration);
+                    for (int i = 0; i < n_motors; ++i) {
+                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
+                        if(!isnan(actuators[i]->get_acceleration())) gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_acceleration());
+                    }
+                    gcode->stream->printf("\n");
+
+                    gcode->stream->printf(";X- Junction Deviation, Z- Z junction deviation, S - Minimum Planner speed mm/sec:\nM205 X%1.5f Z%1.5f S%1.5f\n", THEKERNEL->planner->junction_deviation, isnan(THEKERNEL->planner->z_junction_deviation)?-1:THEKERNEL->planner->z_junction_deviation, THEKERNEL->planner->minimum_planner_speed);
+
+                    gcode->stream->printf(";Max cartesian feedrates in mm/sec:\nM203 X%1.5f Y%1.5f Z%1.5f S%1.5f\n", this->max_speeds[X_AXIS], this->max_speeds[Y_AXIS], this->max_speeds[Z_AXIS], this->max_speed);
+
+                    gcode->stream->printf(";Max actuator feedrates in mm/sec:\nM203.1 ");
+                    for (int i = 0; i < n_motors; ++i) {
+                        char axis= (i <= Z_AXIS ? 'X'+i : 'A'+(i-A_AXIS));
+                        gcode->stream->printf("%c%1.5f ", axis, actuators[i]->get_max_rate());
+                    }
+                    gcode->stream->printf("\n");
+
+                    // get or save any arm solution specific optional values
+                    BaseSolution::arm_options_t options;
+                    if(arm_solution->get_optional(options) && !options.empty()) {
+                        gcode->stream->printf(";Optional arm solution specific settings:\nM665");
+                        for(auto &i : options) {
+                            gcode->stream->printf(" %c%1.4f", i.first, i.second);
+                        }
+                        gcode->stream->printf("\n");
+                    }
+                    break;
+            }   // switch( gcode->m )
+        }   // if( gcode->has_m)
+    }   // else ( gcode->has_g)
 
     if( motion_mode != NONE) {
         is_g123= motion_mode != SEEK;
@@ -572,11 +573,10 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
     // They are not allowed to move at the same time
     float target[n_motors];
     memcpy(target, machine_position, n_motors*sizeof(float));
-
     if(galvo_move) {
         if(this->absolute_mode) {
             if(!isnan(param[X_AXIS])) target[X_AXIS] = param[X_AXIS];
-            if(!isnan(param[Y_AXIS])) target[X_AXIS] = param[X_AXIS];
+            if(!isnan(param[Y_AXIS])) target[Y_AXIS] = param[Y_AXIS];
         }else{
             // they are deltas from the machine_position if specified
             if(!isnan(param[X_AXIS])) target[X_AXIS] = param[X_AXIS] + machine_position[X_AXIS];
@@ -608,7 +608,6 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
             }
         }
     }
-    
     // S is modal When specified on a G0/1/2/3 command
     if(gcode->has_letter('S')) s_value= gcode->get_value('S');
     
@@ -704,7 +703,6 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
     // unity transform by default
     memcpy(am_target, target, n_motors*sizeof(float));
 
-    size_t i = 0;
     bool move= false;
     if(galvo_move) {
         deltas[X_AXIS] = am_target[X_AXIS] - machine_position[X_AXIS];
@@ -726,7 +724,7 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
         unit_vec[Y_AXIS] = deltas[Y_AXIS] / distance;
     }
     else {
-        for (i = Z_AXIS; i < n_motors; i++) {
+        for (size_t i = Z_AXIS; i < n_motors; i++) {
             deltas[i] = am_target[i] - machine_position[i];
             if(fabsf(deltas[i]) < 0.00001F) continue;
             // at least one non zero delta
@@ -740,8 +738,6 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
 
     // total movement, use XY if a primary axis otherwise we calculate distance
     ActuatorCoordinates actuator_pos;
-    // find actuator position given the machine position. ABC also included in arm_solution
-    arm_solution->cartesian_to_actuator( am_target, actuator_pos );
 
 //    DEBUG_PRINTF("distance: %f, aux_move: %d\n", distance, auxilliary_move);
 
@@ -752,6 +748,9 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
 
     // check per-actuator speed limits
     if(galvo_move) {
+        // find actuator position given the machine position.
+        arm_solution->cartesian_to_actuator( am_target, actuator_pos );
+
         for (size_t actuator = 0; actuator < N_PRIMARY_AXIS; actuator++) {
             float d = fabsf(actuator_pos[actuator] - actuators[actuator]->get_last_milestone());
             if(d < 0.00001F) continue;// no realistic movement for this actuator
@@ -773,12 +772,15 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
         }
     }
     else {
-        if (rate_mm_s > actuators[i]->get_max_rate()) {
-            rate_mm_s = actuators[i]->get_max_rate();
-        }
-        float ma = actuators[i]->get_acceleration(); // in mm/sec²
-        if(!isnan(ma)) {  // if axis does not have acceleration set then it uses the default_acceleration
-            acceleration = ma;
+        for (size_t i = Z_AXIS; i < n_motors; i++) {
+            actuator_pos[i] = am_target[i];
+            if (rate_mm_s > actuators[i]->get_max_rate()) {
+                rate_mm_s = actuators[i]->get_max_rate();
+            }
+            float ma = actuators[i]->get_acceleration(); // in mm/sec²
+            if(!isnan(ma)) {  // if axis does not have acceleration set then it uses the default_acceleration
+                acceleration = ma;
+            }
         }
     }
 
