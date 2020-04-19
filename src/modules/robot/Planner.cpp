@@ -42,7 +42,7 @@ Planner::Planner()
 // Configure acceleration
 void Planner::config_load()
 {
-    this->junction_deviation    = THEKERNEL->config->value(junction_deviation_checksum)->by_default(0.05F)->as_number();
+    this->junction_deviation    = THEKERNEL->config->value(junction_deviation_checksum)->by_default(0.0F)->as_number();
     this->z_junction_deviation  = THEKERNEL->config->value(z_junction_deviation_checksum)->by_default(NAN)->as_number(); // disabled by default
     this->minimum_planner_speed = THEKERNEL->config->value(minimum_planner_speed_checksum)->by_default(0.0f)->as_number();
 //    this->DAC_neutral           = THEKERNEL->config->value(dac_neutral_checksum)->by_default(32767)->as_number();
@@ -72,6 +72,8 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
             block->direction_bits[i] = (steps < 0) ? 1 : 0;
         }
         block->is_g123 = g123;
+        // info needed by laser
+        block->s_value = roundf(s_value*(1<<11)); // 1.11 fixed point
         // Max number of steps
         block->steps_event_count = block->steps[0] >= block->steps[1] ?  block->steps[0] : block->steps[1];
     }
@@ -133,60 +135,61 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
     float vmax_junction = minimum_planner_speed; // Set default max junction speed
 
     // if unit_vec was null then it was not a primary axis move so we skip the junction deviation stuff
-    if (block->primary_axis && !THECONVEYOR->is_queue_empty()) {
-        // info needed by laser
-        block->s_value = roundf(s_value*(1<<11)); // 1.11 fixed point
+    if ( block->primary_axis && acceleration >= 1.0F ) {
 
-        Block *prev_block = THECONVEYOR->queue.item_ref(THECONVEYOR->queue.prev(THECONVEYOR->queue.head_i));
-        float previous_nominal_speed = prev_block->primary_axis ? prev_block->nominal_speed : 0;
+        if ( !THECONVEYOR->is_queue_empty() && junction_deviation >= 0.0001F) {
+            Block *prev_block = THECONVEYOR->queue.item_ref(THECONVEYOR->queue.prev(THECONVEYOR->queue.head_i));
+            float previous_nominal_speed = prev_block->primary_axis ? prev_block->nominal_speed : 0;
 
-        if (junction_deviation > 0.0F && previous_nominal_speed > 0.0F) {
-            // Compute cosine of angle between previous and current path. (prev_unit_vec is negative)
-            // NOTE: Max junction velocity is computed without sin() or acos() by trig half angle identity.
-            float cos_theta = - this->previous_unit_vec[X_AXIS] * unit_vec[X_AXIS]
-                              - this->previous_unit_vec[Y_AXIS] * unit_vec[Y_AXIS];
+            if (previous_nominal_speed > 0.0F) {
+                // Compute cosine of angle between previous and current path. (prev_unit_vec is negative)
+                // NOTE: Max junction velocity is computed without sin() or acos() by trig half angle identity.
+                float cos_theta = - this->previous_unit_vec[X_AXIS] * unit_vec[X_AXIS]
+                                  - this->previous_unit_vec[Y_AXIS] * unit_vec[Y_AXIS];
 
-            // Skip and use default max junction speed for 0 degree acute junction.
-            if (cos_theta <= 0.9999F) {
-                vmax_junction = std::min(previous_nominal_speed, block->nominal_speed);
-                // Skip and avoid divide by zero for straight junctions at 180 degrees. Limit to min() of nominal speeds.
-                if (cos_theta >= -0.9999F) {
-                    // Compute maximum junction velocity based on maximum acceleration and junction deviation
-                    float sin_theta_d2 = sqrtf(0.5F * (1.0F - cos_theta)); // Trig half angle identity. Always positive.
-                    vmax_junction = std::min(vmax_junction, sqrtf(acceleration * junction_deviation * sin_theta_d2 / (1.0F - sin_theta_d2)));
+                // Skip and use default max junction speed for 0 degree acute junction.
+                if (cos_theta <= 0.9999F) {
+                    vmax_junction = std::min(previous_nominal_speed, block->nominal_speed);
+                    // Skip and avoid divide by zero for straight junctions at 180 degrees. Limit to min() of nominal speeds.
+                    if (cos_theta >= -0.9999F) {
+                        // Compute maximum junction velocity based on maximum acceleration and junction deviation
+                        float sin_theta_d2 = sqrtf(0.5F * (1.0F - cos_theta)); // Trig half angle identity. Always positive.
+                        vmax_junction = std::min(vmax_junction, sqrtf(acceleration * junction_deviation * sin_theta_d2 / (1.0F - sin_theta_d2)));
+                    }
                 }
             }
         }
+
+        block->max_entry_speed = vmax_junction;
+
+        // Initialize block entry speed. Compute based on deceleration to user-defined minimum_planner_speed.
+        float v_allowable = max_allowable_speed(-acceleration, minimum_planner_speed, block->millimeters);
+        block->entry_speed = std::min(vmax_junction, v_allowable);
+
+        // Initialize planner efficiency flags
+        // Set flag if block will always reach maximum junction speed regardless of entry/exit speeds.
+        // If a block can de/ac-celerate from nominal speed to zero within the length of the block, then
+        // the current block and next block junction speeds are guaranteed to always be at their maximum
+        // junction speeds in deceleration and acceleration, respectively. This is due to how the current
+        // block nominal speed limits both the current and next maximum junction speeds. Hence, in both
+        // the reverse and forward planners, the corresponding block junction speed will always be at the
+        // the maximum junction speed and may always be ignored for any speed reduction checks.
+        if (block->nominal_speed <= v_allowable) { block->nominal_length_flag = true; }
+        else { block->nominal_length_flag = false; }
+
+        // Always calculate trapezoid for new block
+        block->recalculate_flag = true;
+
+        // Update previous path unit_vector and nominal speed
+        memcpy(previous_unit_vec, unit_vec, sizeof(previous_unit_vec));
+
+        // Math-heavy re-computing of the whole queue to take the new
+        this->recalculate();
     }
-    block->max_entry_speed = vmax_junction;
-
-    // Initialize block entry speed. Compute based on deceleration to user-defined minimum_planner_speed.
-    float v_allowable = max_allowable_speed(-acceleration, minimum_planner_speed, block->millimeters);
-    block->entry_speed = std::min(vmax_junction, v_allowable);
-
-    // Initialize planner efficiency flags
-    // Set flag if block will always reach maximum junction speed regardless of entry/exit speeds.
-    // If a block can de/ac-celerate from nominal speed to zero within the length of the block, then
-    // the current block and next block junction speeds are guaranteed to always be at their maximum
-    // junction speeds in deceleration and acceleration, respectively. This is due to how the current
-    // block nominal speed limits both the current and next maximum junction speeds. Hence, in both
-    // the reverse and forward planners, the corresponding block junction speed will always be at the
-    // the maximum junction speed and may always be ignored for any speed reduction checks.
-    if (block->nominal_speed <= v_allowable) { block->nominal_length_flag = true; }
-    else { block->nominal_length_flag = false; }
-
-    // Always calculate trapezoid for new block
-    block->recalculate_flag = true;
-
-    // Update previous path unit_vector and nominal speed
-    if(unit_vec != nullptr) {
-        memcpy(previous_unit_vec, unit_vec, sizeof(previous_unit_vec)); // previous_unit_vec[] = unit_vec[]
-    } else {
+    else {
         memset(previous_unit_vec, 0, sizeof(previous_unit_vec));
+        block->calculate_trapezoid( minimum_planner_speed, minimum_planner_speed );
     }
-
-    // Math-heavy re-computing of the whole queue to take the new
-    this->recalculate();
 
     // The block can now be used
     block->ready();
@@ -282,7 +285,6 @@ void Planner::recalculate()
     // which has not had calculate_trapezoid run yet
     current->calculate_trapezoid(current->entry_speed, minimum_planner_speed);
 }
-
 
 // Calculates the maximum allowable speed at this point when you must be able to reach target_velocity using the
 // acceleration within the allotted distance.

@@ -164,52 +164,66 @@ void StepTicker::step_tick (void)
     bool still_moving= false;
     if(current_block->primary_axis) {
         bool has_tick = false;
-        // foreach motor, if it is active see if time to issue a step to that motor
-        for (uint8_t m = 0; m <= 1; m++) {
-            if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
+        if(current_block->is_g123) {
+            // foreach motor, if it is active see if time to issue a step to that motor
+            for (uint8_t m = 0; m <= 1; m++) {
+                if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
 
-            current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
+                if(current_block->acceleration >= 1.0F) {
+                    current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
 
-            if(current_tick == current_block->tick_info[m].next_accel_event) {
-                if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
-                    current_block->tick_info[m].acceleration_change = 0;
-                    if(current_block->decelerate_after < current_block->total_move_ticks) {
-                        current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
-                        if(current_tick != current_block->decelerate_after) { // We are plateauing
-                            // steps/sec / tick frequency to get steps per tick
-                            current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
+                    if(current_tick == current_block->tick_info[m].next_accel_event) {
+                        if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
+                            current_block->tick_info[m].acceleration_change = 0;
+                            if(current_block->decelerate_after < current_block->total_move_ticks) {
+                                current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
+                                if(current_tick != current_block->decelerate_after) { // We are plateauing
+                                    // steps/sec / tick frequency to get steps per tick
+                                    current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
+                                }
+                            }
+                        }
+
+                        if(current_tick == current_block->decelerate_after) { // We start decelerating
+                            current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
                         }
                     }
+                    // protect against rounding errors and such
+                    if(current_block->tick_info[m].steps_per_tick <= 0) {
+                        current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
+                        current_block->tick_info[m].steps_per_tick = 0;
+                    }
                 }
+                current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
 
-                if(current_tick == current_block->decelerate_after) { // We start decelerating
-                    current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
+                if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
+                    current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
+                    ++current_block->tick_info[m].step_count;
+
+                    dac_data[m] = (motor[m]->virt_step() * dac_step_size) + dac_neutral;
+                    has_tick = true;
+
+                    if(current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
+                        // done
+                        current_block->tick_info[m].steps_to_move = 0;
+                        motor[m]->stop_moving(); // let motor know it is no longer moving
+                    }
                 }
+                // see if any motors are still moving after this tick
+                if(motor[m]->is_moving()) still_moving= true;
             }
-
-            // protect against rounding errors and such
-            if(current_block->tick_info[m].steps_per_tick <= 0) {
-                current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
-                current_block->tick_info[m].steps_per_tick = 0;
+        }
+        else {  // G0 move: do instant move
+            has_tick = true;
+            still_moving= false;
+            for (uint8_t m = 0; m <= 1; m++) {
+                dac_data[m] =  motor[m]->get_current_step() + (current_block->direction_bits[m] ? -current_block->tick_info[m].steps_to_move : current_block->tick_info[m].steps_to_move);
+                motor[m]->set_current_step(dac_data[m]);
+                dac_data[m] *= dac_step_size;
+                dac_data[m] += dac_neutral;
+                current_block->tick_info[m].steps_to_move = 0;
+                motor[m]->stop_moving(); // let motor know it is no longer moving
             }
-
-            current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
-
-            if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
-                current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
-                ++current_block->tick_info[m].step_count;
-
-                dac_data[m] = (motor[m]->virt_step() * dac_step_size) + dac_neutral;
-                has_tick = true;
-
-                if(current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
-                    // done
-                    current_block->tick_info[m].steps_to_move = 0;
-                    motor[m]->stop_moving(); // let motor know it is no longer moving
-                }
-            }
-            // see if any motors are still moving after this tick
-            if(motor[m]->is_moving()) still_moving= true;
         }
         if(has_tick) {
             motor[0]->latch(UNLATCH);

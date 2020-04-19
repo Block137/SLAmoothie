@@ -25,11 +25,10 @@ delta_steps_per_mm                          200.0             # Steps per mm for
 
 # Planner module configuration : Look-ahead and acceleration configuration
 # See http://smoothieware.org/motion-control
-acceleration                               150000             # Acceleration in mm/second/second.
+acceleration                                 1000             # Acceleration in mm/second/second.
 z_acceleration                                500             # Acceleration for Z only moves in mm/s^2, 0 uses acceleration which is the default. DO NOT SET ON A DELTA
-junction_deviation                              0.2           # See http://smoothieware.org/motion-control#junction-deviation
+junction_deviation                              0.0           # See http://smoothieware.org/motion-control#junction-deviation
 
-# Cartesian axis speed limits
 max_speed                                   300000
 x_axis_max_speed                            200000            # Maximum speed in mm/min
 y_axis_max_speed                            200000            # Maximum speed in mm/min
@@ -45,27 +44,31 @@ gamma_current                                0.2              # Z stepper motor 
 delta_current                                0.2              # A stepper motor current
 epsilon_current                              0.2              # B stepper motor current
 
+alpha_max_rate                          200000.0              # Maximum rate in mm/min
+beta_max_rate                           200000.0              # Maximum rate in mm/min
+gamma_max_rate                            2000.0              # Maximum rate in mm/min
+delta_max_rate                            2000.0              # Maximum rate in mm/min
+
+alpha_acceleration                           0.0              # Maximum rate in mm/min
+beta_acceleration                            0.0              # Maximum rate in mm/min
+gamma_acceleration                         200.0              # Maximum rate in mm/min
+delta_acceleration                         200.0              # Maximum rate in mm/min
+
 alpha_step_pin                               2.0              # Pin for alpha stepper step signal
 alpha_dir_pin                               nc                # Pin for alpha stepper direction, add '!' to reverse direction
 alpha_en_pin                                 0.4              # Pin for alpha enable pin
-alpha_max_rate                          200000.0              # Maximum rate in mm/min
 
 beta_step_pin                               nc                # Pin for beta stepper step signal
 beta_dir_pin                                nc                # Pin for beta stepper direction, add '!' to reverse direction
 beta_en_pin                                 nc                # Pin for beta enable
-beta_max_rate                           200000.0              # Maxmimum rate in mm/min
 
 gamma_step_pin                               2.2              # Pin for gamma stepper step signal
 gamma_dir_pin                                0.20             # Pin for gamma stepper direction, add '!' to reverse direction
 gamma_en_pin                                 0.19             # Pin for gamma enable
-gamma_max_rate                            2000.0              # Maximum rate in mm/min
-gamma_acceleration                         200.0              # Maximum rate in mm/min
 
 delta_step_pin                               2.3              
 delta_dir_pin                                0.22             
 delta_en_pin                                 0.21             
-delta_max_rate                            2000.0              # Maximum rate in mm/min
-delta_acceleration                         200.0              # Maximum rate in mm/min
 
 #epsilon_step_pin                             2.8              
 #epsilon_dir_pin                              2.13             

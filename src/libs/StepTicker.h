@@ -69,9 +69,9 @@ class StepTicker{
 
         Block *current_block;
         uint32_t current_tick{0};
-        uint32_t dac_neutral;
-        uint32_t dac_step_size;
-        uint32_t dac_data[2];
+        int32_t dac_neutral;
+        int32_t dac_step_size;
+        int32_t dac_data[2];
 
         struct {
             volatile bool running:1;

@@ -136,91 +136,106 @@ void Block::calculate_trapezoid( float entryspeed, float exitspeed )
 {
     // if block is currently executing, don't touch anything!
     if (is_ticking) return;
+    
+    if(this->acceleration >= 1.0F) {
+        float initial_rate = this->nominal_rate * (entryspeed / this->nominal_speed); // steps/sec
+        float final_rate = this->nominal_rate * (exitspeed / this->nominal_speed);
+        //printf("Initial rate: %f, final_rate: %f\n", initial_rate, final_rate);
+        // How many steps ( can be fractions of steps, we need very precise values ) to accelerate and decelerate
+        // This is a simplification to get rid of rate_delta and get the steps/s² accel directly from the mm/s² accel
+        float acceleration_per_second = (this->acceleration * this->steps_event_count) / this->millimeters;
 
-    float initial_rate = this->nominal_rate * (entryspeed / this->nominal_speed); // steps/sec
-    float final_rate = this->nominal_rate * (exitspeed / this->nominal_speed);
-    //printf("Initial rate: %f, final_rate: %f\n", initial_rate, final_rate);
-    // How many steps ( can be fractions of steps, we need very precise values ) to accelerate and decelerate
-    // This is a simplification to get rid of rate_delta and get the steps/s² accel directly from the mm/s² accel
-    float acceleration_per_second = (this->acceleration * this->steps_event_count) / this->millimeters;
+        float maximum_possible_rate = sqrtf( ( this->steps_event_count * acceleration_per_second ) + ( ( powf(initial_rate, 2) + powf(final_rate, 2) ) / 2.0F ) );
 
-    float maximum_possible_rate = sqrtf( ( this->steps_event_count * acceleration_per_second ) + ( ( powf(initial_rate, 2) + powf(final_rate, 2) ) / 2.0F ) );
+        //printf("id %d: acceleration_per_second: %f, maximum_possible_rate: %f steps/sec, %f mm/sec\n", this->id, acceleration_per_second, maximum_possible_rate, maximum_possible_rate/100);
 
-    //printf("id %d: acceleration_per_second: %f, maximum_possible_rate: %f steps/sec, %f mm/sec\n", this->id, acceleration_per_second, maximum_possible_rate, maximum_possible_rate/100);
+        // Now this is the maximum rate we'll achieve this move, either because
+        // it's the higher we can achieve, or because it's the higher we are
+        // allowed to achieve
+        this->maximum_rate = std::min(maximum_possible_rate, this->nominal_rate);
 
-    // Now this is the maximum rate we'll achieve this move, either because
-    // it's the higher we can achieve, or because it's the higher we are
-    // allowed to achieve
-    this->maximum_rate = std::min(maximum_possible_rate, this->nominal_rate);
+        // Now figure out how long it takes to accelerate in seconds
+        float time_to_accelerate = ( this->maximum_rate - initial_rate ) / acceleration_per_second;
 
-    // Now figure out how long it takes to accelerate in seconds
-    float time_to_accelerate = ( this->maximum_rate - initial_rate ) / acceleration_per_second;
+        // Now figure out how long it takes to decelerate
+        float time_to_decelerate = ( final_rate -  this->maximum_rate ) / -acceleration_per_second;
 
-    // Now figure out how long it takes to decelerate
-    float time_to_decelerate = ( final_rate -  this->maximum_rate ) / -acceleration_per_second;
+        // Now we know how long it takes to accelerate and decelerate, but we must
+        // also know how long the entire move takes so we can figure out how long
+        // is the plateau if there is one
+        float plateau_time = 0;
 
-    // Now we know how long it takes to accelerate and decelerate, but we must
-    // also know how long the entire move takes so we can figure out how long
-    // is the plateau if there is one
-    float plateau_time = 0;
+        // Only if there is actually a plateau ( we are limited by nominal_rate )
+        if(maximum_possible_rate > this->nominal_rate) {
+            // Figure out the acceleration and deceleration distances ( in steps )
+            float acceleration_distance = ( ( initial_rate + this->maximum_rate ) / 2.0F ) * time_to_accelerate;
+            float deceleration_distance = ( ( this->maximum_rate + final_rate ) / 2.0F ) * time_to_decelerate;
 
-    // Only if there is actually a plateau ( we are limited by nominal_rate )
-    if(maximum_possible_rate > this->nominal_rate) {
-        // Figure out the acceleration and deceleration distances ( in steps )
-        float acceleration_distance = ( ( initial_rate + this->maximum_rate ) / 2.0F ) * time_to_accelerate;
-        float deceleration_distance = ( ( this->maximum_rate + final_rate ) / 2.0F ) * time_to_decelerate;
+            // Figure out the plateau steps
+            float plateau_distance = this->steps_event_count - acceleration_distance - deceleration_distance;
 
-        // Figure out the plateau steps
-        float plateau_distance = this->steps_event_count - acceleration_distance - deceleration_distance;
+            // Figure out the plateau time in seconds
+            plateau_time = plateau_distance / this->maximum_rate;
+        }
 
-        // Figure out the plateau time in seconds
-        plateau_time = plateau_distance / this->maximum_rate;
+        // Figure out how long the move takes total ( in seconds )
+        float total_move_time = time_to_accelerate + time_to_decelerate + plateau_time;
+        //puts "total move time: #{total_move_time}s time to accelerate: #{time_to_accelerate}, time to decelerate: #{time_to_decelerate}"
+
+        // We now have the full timing for acceleration, plateau and deceleration,
+        // yay \o/ Now this is very important these are in seconds, and we need to
+        // round them into ticks. This means instead of accelerating in 100.23
+        // ticks we'll accelerate in 100 ticks. Which means to reach the exact
+        // speed we want to reach, we must figure out a new/slightly different
+        // acceleration/deceleration to be sure we accelerate and decelerate at
+        // the exact rate we want
+
+        // First off round total time, acceleration time and deceleration time in ticks
+        uint32_t acceleration_ticks = floorf( time_to_accelerate * STEP_TICKER_FREQUENCY );
+        uint32_t deceleration_ticks = floorf( time_to_decelerate * STEP_TICKER_FREQUENCY );
+        uint32_t total_move_ticks   = floorf( total_move_time    * STEP_TICKER_FREQUENCY );
+
+        // Now deduce the plateau time for those new values expressed in tick
+        //uint32_t plateau_ticks = total_move_ticks - acceleration_ticks - deceleration_ticks;
+
+        // Now we figure out the acceleration value to reach EXACTLY maximum_rate(steps/s) in EXACTLY acceleration_ticks(ticks) amount of time in seconds
+        // note we need to do this instead of using time_to_accelerate(seconds) directly because time_to_accelerate(seconds) and acceleration_ticks(seconds) do not have the same value anymore due to the rounding
+
+        float acceleration_in_steps = (acceleration_ticks > 0 ) ? ( this->maximum_rate - initial_rate ) / (acceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
+        float deceleration_in_steps = (deceleration_ticks > 0 ) ? ( this->maximum_rate - final_rate )   / (deceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
+
+        // we have a potential race condition here as we could get interrupted anywhere in the middle of this call, we need to lock
+        // the updates to the blocks to get around it
+        this->locked= true;
+        // Now figure out the two acceleration ramp change events in ticks
+        this->accelerate_until = acceleration_ticks;
+        this->decelerate_after = total_move_ticks - deceleration_ticks;
+
+        // We now have everything we need for this block to call a Steppermotor->move method !!!!
+        // Theorically, if accel is done per tick, the speed curve should be perfect.
+        this->total_move_ticks = total_move_ticks;
+
+        this->initial_rate = initial_rate;
+        this->exit_speed = exitspeed;
+
+        // prepare the block for stepticker
+        this->prepare(acceleration_in_steps, deceleration_in_steps);
+
+        this->locked= false;
     }
+    else {
+        this->maximum_rate = this->nominal_rate;
+        // the updates to the blocks to get around it
+        this->locked= true;
 
-    // Figure out how long the move takes total ( in seconds )
-    float total_move_time = time_to_accelerate + time_to_decelerate + plateau_time;
-    //puts "total move time: #{total_move_time}s time to accelerate: #{time_to_accelerate}, time to decelerate: #{time_to_decelerate}"
+        this->initial_rate = this->nominal_rate;
+        this->exit_speed = this->nominal_rate;
 
-    // We now have the full timing for acceleration, plateau and deceleration,
-    // yay \o/ Now this is very important these are in seconds, and we need to
-    // round them into ticks. This means instead of accelerating in 100.23
-    // ticks we'll accelerate in 100 ticks. Which means to reach the exact
-    // speed we want to reach, we must figure out a new/slightly different
-    // acceleration/deceleration to be sure we accelerate and decelerate at
-    // the exact rate we want
+        // prepare the block for stepticker
+        this->prepare(0.0f, 0.0f);
 
-    // First off round total time, acceleration time and deceleration time in ticks
-    uint32_t acceleration_ticks = floorf( time_to_accelerate * STEP_TICKER_FREQUENCY );
-    uint32_t deceleration_ticks = floorf( time_to_decelerate * STEP_TICKER_FREQUENCY );
-    uint32_t total_move_ticks   = floorf( total_move_time    * STEP_TICKER_FREQUENCY );
-
-    // Now deduce the plateau time for those new values expressed in tick
-    //uint32_t plateau_ticks = total_move_ticks - acceleration_ticks - deceleration_ticks;
-
-    // Now we figure out the acceleration value to reach EXACTLY maximum_rate(steps/s) in EXACTLY acceleration_ticks(ticks) amount of time in seconds
-    // note we need to do this instead of using time_to_accelerate(seconds) directly because time_to_accelerate(seconds) and acceleration_ticks(seconds) do not have the same value anymore due to the rounding
-
-    float acceleration_in_steps = (acceleration_ticks > 0 ) ? ( this->maximum_rate - initial_rate ) / (acceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
-    float deceleration_in_steps = (deceleration_ticks > 0 ) ? ( this->maximum_rate - final_rate )   / (deceleration_ticks / STEP_TICKER_FREQUENCY) : 0;
-
-    // we have a potential race condition here as we could get interrupted anywhere in the middle of this call, we need to lock
-    // the updates to the blocks to get around it
-    this->locked= true;
-    // Now figure out the two acceleration ramp change events in ticks
-    this->accelerate_until = acceleration_ticks;
-    this->decelerate_after = total_move_ticks - deceleration_ticks;
-
-    // We now have everything we need for this block to call a Steppermotor->move method !!!!
-    // Theorically, if accel is done per tick, the speed curve should be perfect.
-    this->total_move_ticks = total_move_ticks;
-
-    this->initial_rate = initial_rate;
-    this->exit_speed = exitspeed;
-
-    // prepare the block for stepticker
-    this->prepare(acceleration_in_steps, deceleration_in_steps);
-
-    this->locked= false;
+        this->locked= false;
+    }
 }
 
 // Calculates the maximum allowable speed at this point when you must be able to reach target_velocity using the
@@ -251,7 +266,6 @@ float Block::reverse_pass(float exit_speed)
 
     return this->entry_speed;
 }
-
 
 // Called by Planner::recalculate() when scanning the plan from first to last entry.
 // returns maximum exit speed of this block
@@ -310,10 +324,6 @@ void Block::prepare(float acceleration_in_steps, float deceleration_in_steps)
     // Now figure out the acceleration PER TICK, this should ideally be held as a double as it's very critical to the block timing
     // steps/tick^2
     // was....
-    // float acceleration_per_tick = acceleration_in_steps / STEP_TICKER_FREQUENCY_2; // that is 100,000² too big for a float
-    // float deceleration_per_tick = deceleration_in_steps / STEP_TICKER_FREQUENCY_2;
-    double acceleration_per_tick = acceleration_in_steps * fp_scale; // this is now scaled to fit a 2.30 fixed point number
-    double deceleration_per_tick = deceleration_in_steps * fp_scale;
 
     for (uint8_t m = 0; m < n_actuators; m++) {
         uint32_t steps = this->steps[m];
@@ -326,40 +336,31 @@ void Block::prepare(float acceleration_in_steps, float deceleration_in_steps)
         this->tick_info[m].steps_per_tick = (int64_t)round((((double)this->initial_rate * aratio) / STEP_TICKER_FREQUENCY) * STEPTICKER_FPSCALE); // steps/sec / tick frequency to get steps per tick in 2.62 fixed point
         this->tick_info[m].counter = 0; // 2.62 fixed point
         this->tick_info[m].step_count = 0;
-        this->tick_info[m].next_accel_event = this->total_move_ticks + 1;
 
-        double acceleration_change = 0;
-        if(this->accelerate_until != 0) { // If the next accel event is the end of accel
-            this->tick_info[m].next_accel_event = this->accelerate_until;
-            acceleration_change = acceleration_per_tick;
+        if(this->acceleration >= 1.0F) {   
+            this->tick_info[m].next_accel_event = this->total_move_ticks + 1;
+            double acceleration_per_tick = acceleration_in_steps * fp_scale; // this is now scaled to fit a 2.30 fixed point number
+            double deceleration_per_tick = deceleration_in_steps * fp_scale;
+            double acceleration_change = 0;
+            if(this->accelerate_until != 0) { // If the next accel event is the end of accel
+                this->tick_info[m].next_accel_event = this->accelerate_until;
+                acceleration_change = acceleration_per_tick;
 
-        } else if(this->decelerate_after == 0 /*&& this->accelerate_until == 0*/) {
-            // we start off decelerating
-            acceleration_change = -deceleration_per_tick;
+            } else if(this->decelerate_after == 0 /*&& this->accelerate_until == 0*/) {
+                // we start off decelerating
+                acceleration_change = -deceleration_per_tick;
 
-        } else if(this->decelerate_after != this->total_move_ticks /*&& this->accelerate_until == 0*/) {
-            // If the next event is the start of decel ( don't set this if the next accel event is accel end )
-            this->tick_info[m].next_accel_event = this->decelerate_after;
+            } else if(this->decelerate_after != this->total_move_ticks /*&& this->accelerate_until == 0*/) {
+                // If the next event is the start of decel ( don't set this if the next accel event is accel end )
+                this->tick_info[m].next_accel_event = this->decelerate_after;
+            }
+
+            // already converted to fixed point just needs scaling by ratio
+            //#define STEPTICKER_TOFP(x) ((int64_t)round((double)(x)*STEPTICKER_FPSCALE))
+            this->tick_info[m].acceleration_change= (int64_t)round(acceleration_change * aratio);
+            this->tick_info[m].deceleration_change= -(int64_t)round(deceleration_per_tick * aratio);
+            this->tick_info[m].plateau_rate= (int64_t)round(((this->maximum_rate * aratio) / STEP_TICKER_FREQUENCY) * STEPTICKER_FPSCALE);
         }
-
-        // already converted to fixed point just needs scaling by ratio
-        //#define STEPTICKER_TOFP(x) ((int64_t)round((double)(x)*STEPTICKER_FPSCALE))
-        this->tick_info[m].acceleration_change= (int64_t)round(acceleration_change * aratio);
-        this->tick_info[m].deceleration_change= -(int64_t)round(deceleration_per_tick * aratio);
-        this->tick_info[m].plateau_rate= (int64_t)round(((this->maximum_rate * aratio) / STEP_TICKER_FREQUENCY) * STEPTICKER_FPSCALE);
-
-//        #if 0
-//        THEKERNEL->streams->printf("spt: %08lX %08lX, ac: %08lX %08lX, dc: %08lX %08lX, pr: %08lX %08lX\n",
-//            (uint32_t)(this->tick_info[m].steps_per_tick>>32), // 2.62 fixed point
-//            (uint32_t)(this->tick_info[m].steps_per_tick&0xFFFFFFFF), // 2.62 fixed point
-//            (uint32_t)(this->tick_info[m].acceleration_change>>32), // 2.62 fixed point signed
-//            (uint32_t)(this->tick_info[m].acceleration_change&0xFFFFFFFF), // 2.62 fixed point signed
-//            (uint32_t)(this->tick_info[m].deceleration_change>>32), // 2.62 fixed point
-//            (uint32_t)(this->tick_info[m].deceleration_change&0xFFFFFFFF), // 2.62 fixed point
-//            (uint32_t)(this->tick_info[m].plateau_rate>>32), // 2.62 fixed point
-//            (uint32_t)(this->tick_info[m].plateau_rate&0xFFFFFFFF) // 2.62 fixed point
-//        );
-//        #endif
     }
 }
 

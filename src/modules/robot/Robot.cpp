@@ -242,6 +242,19 @@ uint8_t Robot::register_motor(StepperMotor *motor)
     return n_motors++;
 }
 
+// this does a sanity check that actuator speeds do not exceed steps rate capability
+// we will override the actuator max_rate if the combination of max_rate and steps/sec exceeds base_stepping_frequency
+void Robot::check_max_actuator_speeds()
+{
+    for (size_t i = 0; i < n_motors; i++) {
+        float step_freq = actuators[i]->get_max_rate() * actuators[i]->get_steps_per_mm();
+        if (step_freq > THEKERNEL->base_stepping_frequency) {
+            actuators[i]->set_max_rate(floorf(THEKERNEL->base_stepping_frequency / actuators[i]->get_steps_per_mm()));
+            THEKERNEL->streams->printf("WARNING: actuator %d rate exceeds base_stepping_frequency * ..._steps_per_mm: %f, setting to %f\n", i, step_freq, actuators[i]->get_max_rate());
+        }
+    }
+}
+
 void Robot::get_current_machine_position(float *pos) const
 {
     // get real time current actuator position in mm
@@ -264,19 +277,6 @@ void Robot::print_position(uint8_t subcode, std::string& res) const
 
     if(n > sizeof(buf)) n= sizeof(buf);
     res.append(buf, n);
-}
-
-// this does a sanity check that actuator speeds do not exceed steps rate capability
-// we will override the actuator max_rate if the combination of max_rate and steps/sec exceeds base_stepping_frequency
-void Robot::check_max_actuator_speeds()
-{
-    for (size_t i = 0; i < n_motors; i++) {
-        float step_freq = actuators[i]->get_max_rate() * actuators[i]->get_steps_per_mm();
-        if (step_freq > THEKERNEL->base_stepping_frequency) {
-            actuators[i]->set_max_rate(floorf(THEKERNEL->base_stepping_frequency / actuators[i]->get_steps_per_mm()));
-            THEKERNEL->streams->printf("WARNING: actuator %d rate exceeds base_stepping_frequency * ..._steps_per_mm: %f, setting to %f\n", i, step_freq, actuators[i]->get_max_rate());
-        }
-    }
 }
 
 //A GCode has been received
@@ -451,7 +451,7 @@ void Robot::on_gcode_received(void *argument)
                         if(gcode->has_letter(axis)) {
                             float acc = gcode->get_value(axis); // mm/s^2
                             // enforce positive
-                            if (acc <= 0.0F) acc = NAN;
+                            if (acc < 1.0F && i > Y_AXIS) acc = NAN;
                             actuators[i]->set_acceleration(acc);
                         }
                     }
@@ -759,17 +759,8 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
             if (actuator_rate > actuators[actuator]->get_max_rate()) {
                 rate_mm_s *= (actuators[actuator]->get_max_rate() / actuator_rate);
             }
-
-            // adjust acceleration to lowest found, for all actuators as this also corrects
-            // the math for a tiny X move and large A move
-            float ma =  actuators[actuator]->get_acceleration(); // in mm/sec²
-            if(!isnan(ma)) {  // if axis does not have acceleration set then it uses the default_acceleration
-                float ca = (d/distance) * acceleration;
-                if (ca > ma) {
-                    acceleration *= ( ma / ca );
-                }
-            }
         }
+        acceleration = actuators[0]->get_acceleration();
     }
     else {
         for (size_t i = Z_AXIS; i < n_motors; i++) {
