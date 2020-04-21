@@ -35,7 +35,6 @@ using namespace std;
 
 Planner::Planner()
 {
-    memset(this->previous_unit_vec, 0, sizeof this->previous_unit_vec);
     config_load();
 }
 
@@ -50,20 +49,20 @@ void Planner::config_load()
 
 
 // Append a block to the queue, compute it's speed factors
-bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors, float rate_mm_s, float distance, float *unit_vec, float acceleration, float s_value, bool g123)
+bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors, float rate_mm_s, float distance, float acceleration, bool galvo_move, bool g123)
 {
     // Create ( recycle ) a new block
     Block* block = THECONVEYOR->queue.head_ref();
 
     // use either regular junction deviation or z specific and see if a primary axis move
-    block->primary_axis = (unit_vec != nullptr);
+    block->primary_axis = galvo_move;
 
     // Direction bits
     bool has_steps = false;
     int32_t steps = 0;
-    if(block->primary_axis) {   //this is galvo move
+    if(galvo_move) {   //this is galvo move
         for (size_t i = 0; i < N_PRIMARY_AXIS; i++) {
-            steps = THEROBOT->actuators[i]->steps_to_target(actuator_pos[i]);//lroundf( actuator_pos[i] * THEROBOT->actuators[i]->get_steps_per_mm() ) + this->DAC_neutral;
+            steps = THEROBOT->actuators[i]->steps_to_target(actuator_pos[i]);
             if(steps != 0) {
                 THEROBOT->actuators[i]->update_last_milestones(actuator_pos[i], steps);
                 has_steps = true;
@@ -72,8 +71,6 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
             block->direction_bits[i] = (steps < 0) ? 1 : 0;
         }
         block->is_g123 = g123;
-        // info needed by laser
-        block->s_value = roundf(s_value*(1<<11)); // 1.11 fixed point
         // Max number of steps
         block->steps_event_count = block->steps[0] >= block->steps[1] ?  block->steps[0] : block->steps[1];
     }
@@ -96,6 +93,7 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
             }
         }
         block->is_g123 = false;
+        block->acceleration = acceleration; // save in block
     }
     // sometimes even though there is a detectable movement it turns out there are no steps to be had from such a small move
     if(!has_steps) {
@@ -105,9 +103,7 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
     }
 
     // use default JD
-    float junction_deviation = this->junction_deviation;
-
-    block->acceleration = acceleration; // save in block
+//    float junction_deviation = this->junction_deviation;
 
     block->millimeters = distance;
 
@@ -132,73 +128,19 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
 
     // NOTE however it does not take into account independent axis, in most cartesian X and Y and Z are totally independent
     // and this allows one to stop with little to no decleration in many cases. This is particualrly bad on leadscrew based systems that will skip steps.
-    float vmax_junction = minimum_planner_speed; // Set default max junction speed
+//    float vmax_junction = minimum_planner_speed; // Set default max junction speed
 
-    // if unit_vec was null then it was not a primary axis move so we skip the junction deviation stuff
-    if ( block->primary_axis && acceleration >= 1.0F ) {
-
-        if ( !THECONVEYOR->is_queue_empty() && junction_deviation >= 0.0001F) {
-            Block *prev_block = THECONVEYOR->queue.item_ref(THECONVEYOR->queue.prev(THECONVEYOR->queue.head_i));
-            float previous_nominal_speed = prev_block->primary_axis ? prev_block->nominal_speed : 0;
-
-            if (previous_nominal_speed > 0.0F) {
-                // Compute cosine of angle between previous and current path. (prev_unit_vec is negative)
-                // NOTE: Max junction velocity is computed without sin() or acos() by trig half angle identity.
-                float cos_theta = - this->previous_unit_vec[X_AXIS] * unit_vec[X_AXIS]
-                                  - this->previous_unit_vec[Y_AXIS] * unit_vec[Y_AXIS];
-
-                // Skip and use default max junction speed for 0 degree acute junction.
-                if (cos_theta <= 0.9999F) {
-                    vmax_junction = std::min(previous_nominal_speed, block->nominal_speed);
-                    // Skip and avoid divide by zero for straight junctions at 180 degrees. Limit to min() of nominal speeds.
-                    if (cos_theta >= -0.9999F) {
-                        // Compute maximum junction velocity based on maximum acceleration and junction deviation
-                        float sin_theta_d2 = sqrtf(0.5F * (1.0F - cos_theta)); // Trig half angle identity. Always positive.
-                        vmax_junction = std::min(vmax_junction, sqrtf(acceleration * junction_deviation * sin_theta_d2 / (1.0F - sin_theta_d2)));
-                    }
-                }
-            }
-        }
-
-        block->max_entry_speed = vmax_junction;
-
-        // Initialize block entry speed. Compute based on deceleration to user-defined minimum_planner_speed.
-        float v_allowable = max_allowable_speed(-acceleration, minimum_planner_speed, block->millimeters);
-        block->entry_speed = std::min(vmax_junction, v_allowable);
-
-        // Initialize planner efficiency flags
-        // Set flag if block will always reach maximum junction speed regardless of entry/exit speeds.
-        // If a block can de/ac-celerate from nominal speed to zero within the length of the block, then
-        // the current block and next block junction speeds are guaranteed to always be at their maximum
-        // junction speeds in deceleration and acceleration, respectively. This is due to how the current
-        // block nominal speed limits both the current and next maximum junction speeds. Hence, in both
-        // the reverse and forward planners, the corresponding block junction speed will always be at the
-        // the maximum junction speed and may always be ignored for any speed reduction checks.
-        if (block->nominal_speed <= v_allowable) { block->nominal_length_flag = true; }
-        else { block->nominal_length_flag = false; }
-
-        // Always calculate trapezoid for new block
-        block->recalculate_flag = true;
-
-        // Update previous path unit_vector and nominal speed
-        memcpy(previous_unit_vec, unit_vec, sizeof(previous_unit_vec));
-
-        // Math-heavy re-computing of the whole queue to take the new
-        this->recalculate();
-    }
-    else {
-        memset(previous_unit_vec, 0, sizeof(previous_unit_vec));
-        block->calculate_trapezoid( minimum_planner_speed, minimum_planner_speed );
-    }
-
-    // The block can now be used
-    block->ready();
+//    memset(previous_unit_vec, 0, sizeof(previous_unit_vec));
+    block->calculate_trapezoid(galvo_move);
 
     THECONVEYOR->queue_head_block();
+    // The block can now be used
+    block->ready();
 
     return true;
 }
 
+/*
 void Planner::recalculate()
 {
     Conveyor::Queue_t &queue = THECONVEYOR->queue;
@@ -208,36 +150,32 @@ void Planner::recalculate()
     Block* previous;
     Block* current;
 
-    /*
-     * a newly added block is decel limited
-     *
-     * we find its max entry speed given its exit speed
-     *
-     * for each block, walking backwards in the queue:
-     *
-     * if max entry speed == current entry speed
-     * then we can set recalculate to false, since clearly adding another block didn't allow us to enter faster
-     * and thus we don't need to check entry speed for this block any more
-     *
-     * once we find an accel limited block, we must find the max exit speed and walk the queue forwards
-     *
-     * for each block, walking forwards in the queue:
-     *
-     * given the exit speed of the previous block and our own max entry speed
-     * we can tell if we're accel or decel limited (or coasting)
-     *
-     * if prev_exit > max_entry
-     *     then we're still decel limited. update previous trapezoid with our max entry for prev exit
-     * if max_entry >= prev_exit
-     *     then we're accel limited. set recalculate to false, work out max exit speed
-     *
-     * finally, work out trapezoid for the final (and newest) block.
-     */
+     // a newly added block is decel limited
+     //
+     // we find its max entry speed given its exit speed
+     //
+     // for each block, walking backwards in the queue:
+     //
+     // if max entry speed == current entry speed
+     // then we can set recalculate to false, since clearly adding another block didn't allow us to enter faster
+     // and thus we don't need to check entry speed for this block any more
+     //
+     // once we find an accel limited block, we must find the max exit speed and walk the queue forwards
+     //
+     // for each block, walking forwards in the queue:
+     //
+     // given the exit speed of the previous block and our own max entry speed
+     // we can tell if we're accel or decel limited (or coasting)
+     //
+     // if prev_exit > max_entry
+     //     then we're still decel limited. update previous trapezoid with our max entry for prev exit
+     // if max_entry >= prev_exit
+     //     then we're accel limited. set recalculate to false, work out max exit speed
+     //
+     // finally, work out trapezoid for the final (and newest) block.
 
-    /*
-     * Step 1:
-     * For each block, given the exit speed and acceleration, find the maximum entry speed
-     */
+     // Step 1:
+     // For each block, given the exit speed and acceleration, find the maximum entry speed
 
     float entry_speed = minimum_planner_speed;
 
@@ -252,14 +190,12 @@ void Planner::recalculate()
             current     = queue.item_ref(block_index);
         }
 
-        /*
-         * Step 2:
-         * now current points to either tail or first non-recalculate block
-         * and has not had its reverse_pass called
-         * or its calculate_trapezoid
-         * entry_speed is set to the *exit* speed of current.
-         * each block from current to head has its entry speed set to its max entry speed- limited by decel or nominal_rate
-         */
+         // Step 2:
+         // now current points to either tail or first non-recalculate block
+         // and has not had its reverse_pass called
+         // or its calculate_trapezoid
+         // entry_speed is set to the *exit* speed of current.
+         // each block from current to head has its entry speed set to its max entry speed- limited by decel or nominal_rate
 
         float exit_speed = current->max_exit_speed();
 
@@ -276,15 +212,14 @@ void Planner::recalculate()
         }
     }
 
-    /*
-     * Step 3:
-     * work out trapezoid for final (and newest) block
-     */
+     // Step 3:
+     // work out trapezoid for final (and newest) block
 
     // now current points to the head item
     // which has not had calculate_trapezoid run yet
     current->calculate_trapezoid(current->entry_speed, minimum_planner_speed);
 }
+
 
 // Calculates the maximum allowable speed at this point when you must be able to reach target_velocity using the
 // acceleration within the allotted distance.
@@ -293,5 +228,4 @@ float Planner::max_allowable_speed(float acceleration, float target_velocity, fl
     // Was acceleration*60*60*distance, in case this breaks, but here we prefer to use seconds instead of minutes
     return(sqrtf(target_velocity * target_velocity - 2.0F * acceleration * distance));
 }
-
-
+*/

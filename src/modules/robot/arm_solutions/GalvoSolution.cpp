@@ -9,8 +9,8 @@
 #define dac_neutral_checksum        CHECKSUM("dac_neutral")
 
 //#define ROUND(x, y) (roundf(x * (float)(1e ## y)) / (float)(1e ## y))
-#define DEG2RAD      0.01745329251994329576923690768489F
-#define RAD2DEG     57.29577951308232087679815481410517F
+//#define DEG2RAD      0.01745329251994329576923690768489F
+//#define RAD2DEG     57.29577951308232087679815481410517F
 
 GalvoSolution::GalvoSolution(Config* config)
 {
@@ -22,10 +22,8 @@ GalvoSolution::GalvoSolution(Config* config)
 
 void GalvoSolution::cartesian_to_actuator(const float cartesian_mm[], ActuatorCoordinates &actuator_mm ) const
 {
-    float temp = atanf(cartesian_mm[Y_AXIS] / this->galvo_height);
-
-    actuator_mm[ALPHA_STEPPER] = RAD2DEG * atanf(cartesian_mm[X_AXIS] / ((this->galvo_height/ cosf(temp) ) + this->mirrors_distance)  );
-    actuator_mm[BETA_STEPPER]  = RAD2DEG * temp;
+    actuator_mm[BETA_STEPPER]  = atanf(cartesian_mm[Y_AXIS] / this->galvo_height);
+    actuator_mm[ALPHA_STEPPER] = atanf(cartesian_mm[X_AXIS] / ((this->galvo_height/ cosf(actuator_mm[BETA_STEPPER]) ) + this->mirrors_distance)  );
 //    actuator_mm[GAMMA_STEPPER] = cartesian_mm[Z_AXIS];
 }
 

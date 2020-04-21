@@ -16,19 +16,19 @@ class Block {
 
         static void init(uint8_t);
 
-        void calculate_trapezoid( float entry_speed, float exit_speed );
+        void calculate_trapezoid( bool galvo_move );
 
         float reverse_pass(float exit_speed);
         float forward_pass(float next_entry_speed);
         float max_exit_speed();
-        void debug() const;
+//        void debug() const;
         void ready() { is_ready= true; }
         void clear();
         float get_trapezoid_rate(int i) const;
 
     private:
         float max_allowable_speed( float acceleration, float target_velocity, float distance);
-        void prepare(float acceleration_in_steps, float deceleration_in_steps);
+        void prepare(float acceleration_in_steps);
 
         static double fp_scale; // optimize to store this as it does not change
 
@@ -57,7 +57,6 @@ class Block {
             int64_t steps_per_tick; // 2.62 fixed point
             int64_t counter; // 2.62 fixed point
             int64_t acceleration_change; // 2.62 fixed point signed
-            int64_t deceleration_change; // 2.62 fixed point
             int64_t plateau_rate; // 2.62 fixed point
             uint32_t steps_to_move;
             uint32_t step_count;

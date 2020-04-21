@@ -326,14 +326,6 @@ void GcodeDispatch::on_console_line_received(void *line)
         // Ignore comments and blank lines
         new_message.stream->printf("ok\n");
 
-    } else if(first_char == '$') {
-        // ignore as simpleshell will handle it
-        return;
-
-    } else if(islower(first_char)) {
-        // ignore all lowercase as they are simpleshell commands
-        return;
-        
     } else {
         // an uppercase non command word on its own (except XYZF) just returns ok, we could add an error but no hosts expect that.
         new_message.stream->printf("ok - ignored\n");

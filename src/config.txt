@@ -5,7 +5,7 @@
 # Basic motion configuration
 default_feed_rate                           30000             # Default speed (mm/minute) for G1/G2/G3 moves
 default_seek_rate                          100000             # Default speed (mm/minute) for G0 moves
-mm_per_line_segment                             5             # Cut lines into segments this size
+mm_per_line_segment                             8             # Cut lines into segments this size
 
 # Arm solution configuration. Translates mm positions into stepper positions
 # See http://smoothieware.org/stepper-motors
@@ -13,9 +13,10 @@ arm_solution                                galvo
 
 mirrors_distance                             7.5              # Distance between 2 mirrors (mm)
 galvo_height                               559.8076           # distance from print surface (mm)
-dac_step_size                               64                # Reduce resolution by this number of LSB
+dac_step_size                               24                # Reduce resolution by this number of LSB
 #galvo_step_per_deg                        2184.5              # similar to step/mm (will be divided by dac_step_size automatically)
 dac_neutral                              32767                # DAC input for center
+base_stepping_frequency                  64000
 
 alpha_steps_per_mm                         2184.5             # LSB per degree of mirror deflection for alpha ( X ) galvo
 beta_steps_per_mm                          2184.5             # LSB per degree of mirror deflection for beta ( Y ) galvo
@@ -25,14 +26,11 @@ delta_steps_per_mm                          200.0             # Steps per mm for
 
 # Planner module configuration : Look-ahead and acceleration configuration
 # See http://smoothieware.org/motion-control
-acceleration                                 1000             # Acceleration in mm/second/second.
+acceleration                                  500             # Acceleration in mm/second/second.
 z_acceleration                                500             # Acceleration for Z only moves in mm/s^2, 0 uses acceleration which is the default. DO NOT SET ON A DELTA
 junction_deviation                              0.0           # See http://smoothieware.org/motion-control#junction-deviation
 
-max_speed                                   300000
-x_axis_max_speed                            200000            # Maximum speed in mm/min
-y_axis_max_speed                            200000            # Maximum speed in mm/min
-z_axis_max_speed                              2000            # Maximum speed in mm/min
+max_speed                                   180000
 
 # Stepper module configuration
 # Pins are defined as  ports, and pin numbers, appending "!" to the number will invert a pin
@@ -44,8 +42,8 @@ gamma_current                                0.2              # Z stepper motor 
 delta_current                                0.2              # A stepper motor current
 epsilon_current                              0.2              # B stepper motor current
 
-alpha_max_rate                          200000.0              # Maximum rate in mm/min
-beta_max_rate                           200000.0              # Maximum rate in mm/min
+alpha_max_rate                           18000.0              # Maximum rate in deg/min
+beta_max_rate                            18000.0              # Maximum rate in deg/min
 gamma_max_rate                            2000.0              # Maximum rate in mm/min
 delta_max_rate                            2000.0              # Maximum rate in mm/min
 

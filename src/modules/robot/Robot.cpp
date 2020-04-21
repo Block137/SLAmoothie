@@ -78,7 +78,8 @@
 #define ymax_checksum                      CHECKSUM("y_max")
 #define zmax_checksum                      CHECKSUM("z_max")
 
-#define PI 3.14159265358979323846F // force to be float, do not use M_PI
+#define PI        3.14159265358979323846F // force to be float, do not use M_PI
+#define DEG2RAD   0.01745329251994329576923690768489F
 
 //#define DEBUG_PRINTF THEKERNEL->streams->printf
 #define DEBUG_PRINTF(...)
@@ -128,16 +129,16 @@ void Robot::load_config()
 //        this->arm_solution = new CartesianSolution(THEKERNEL->config);
 //    }
 
-    this->feed_rate           = THEKERNEL->config->value(default_feed_rate_checksum   )->by_default(  100.0F)->as_number();
-    this->seek_rate           = THEKERNEL->config->value(default_seek_rate_checksum   )->by_default(  100.0F)->as_number();
-    this->mm_per_line_segment = THEKERNEL->config->value(mm_per_line_segment_checksum )->by_default(    0.0F)->as_number();
-    this->delta_segments_per_second = THEKERNEL->config->value(delta_segments_per_second_checksum )->by_default(0.0f   )->as_number();
+    this->feed_rate           = THEKERNEL->config->value(default_feed_rate_checksum   )->by_default(  600.0F)->as_number();
+    this->seek_rate           = THEKERNEL->config->value(default_seek_rate_checksum   )->by_default( 1000.0F)->as_number();
+    this->mm_per_line_segment = THEKERNEL->config->value(mm_per_line_segment_checksum )->by_default(    5.0F)->as_number();
+    this->delta_segments_per_second = THEKERNEL->config->value(delta_segments_per_second_checksum )->by_default(0.0F)->as_number();
 
     // in mm/sec but specified in config as mm/min
-    this->max_speeds[X_AXIS]  = THEKERNEL->config->value(x_axis_max_speed_checksum    )->by_default( 5000.0F)->as_number() / 60.0F;
-    this->max_speeds[Y_AXIS]  = THEKERNEL->config->value(y_axis_max_speed_checksum    )->by_default( 5000.0F)->as_number() / 60.0F;
-    this->max_speeds[Z_AXIS]  = THEKERNEL->config->value(z_axis_max_speed_checksum    )->by_default( 1000.0F)->as_number() / 60.0F;
-    this->max_speed           = THEKERNEL->config->value(max_speed_checksum           )->by_default(10000.0F)->as_number() / 60.0F;
+    this->max_speeds[X_AXIS]  = THEKERNEL->config->value(x_axis_max_speed_checksum    )->by_default(100000.0F)->as_number() / 60.0F;
+    this->max_speeds[Y_AXIS]  = THEKERNEL->config->value(y_axis_max_speed_checksum    )->by_default(100000.0F)->as_number() / 60.0F;
+    this->max_speeds[Z_AXIS]  = THEKERNEL->config->value(z_axis_max_speed_checksum    )->by_default(  2000.0F)->as_number() / 60.0F;
+    this->max_speed           = THEKERNEL->config->value(max_speed_checksum           )->by_default(140000.0F)->as_number() / 60.0F;
 
     this->segment_z_moves     = THEKERNEL->config->value(segment_z_moves_checksum     )->by_default(true)->as_bool();
 
@@ -190,11 +191,11 @@ void Robot::load_config()
         }
 
         if(a <= 1) {
-            actuators[a]->change_steps_per_mm(THEKERNEL->config->value(motor_checksums[a][3])->by_default(2184.5F)->as_number() / dac_step_size);
+            actuators[a]->change_steps_per_mm((THEKERNEL->config->value(motor_checksums[a][3])->by_default(2184.5F)->as_number() / dac_step_size) / DEG2RAD );
         } else {
             actuators[a]->change_steps_per_mm(THEKERNEL->config->value(motor_checksums[a][3])->by_default(100.0F)->as_number());
         }
-        actuators[a]->set_max_rate(THEKERNEL->config->value(motor_checksums[a][4])->by_default(30000.0F)->as_number()/60.0F); // it is in mm/min and converted to mm/sec
+        actuators[a]->set_max_rate((THEKERNEL->config->value(motor_checksums[a][4])->by_default(36000.0F)->as_number() / 60.0F ) * DEG2RAD); // it is in mm/min and converted to mm/sec
         actuators[a]->set_acceleration(THEKERNEL->config->value(motor_checksums[a][5])->by_default(NAN)->as_number()); // mm/secs²
     }
 
@@ -248,10 +249,24 @@ void Robot::check_max_actuator_speeds()
 {
     for (size_t i = 0; i < n_motors; i++) {
         float step_freq = actuators[i]->get_max_rate() * actuators[i]->get_steps_per_mm();
-        if (step_freq > THEKERNEL->base_stepping_frequency) {
+        if (step_freq > (float)THEKERNEL->base_stepping_frequency) {
             actuators[i]->set_max_rate(floorf(THEKERNEL->base_stepping_frequency / actuators[i]->get_steps_per_mm()));
             THEKERNEL->streams->printf("WARNING: actuator %d rate exceeds base_stepping_frequency * ..._steps_per_mm: %f, setting to %f\n", i, step_freq, actuators[i]->get_max_rate());
         }
+    }
+
+    float mm_per_rad;
+    float cartesian[] = {1.0F, 0.0F};
+    ActuatorCoordinates actuator_rad;
+
+    arm_solution->cartesian_to_actuator( cartesian, actuator_rad );
+    if(actuator_rad[0] == 0.0F) return;
+    mm_per_rad = cartesian[0] / actuator_rad[0];
+
+    float safe_speed = actuators[X_AXIS]->get_max_rate() * mm_per_rad * 0.9F;
+
+    if(this->max_speed > safe_speed) {
+        this->max_speed = safe_speed;
     }
 }
 
@@ -413,29 +428,29 @@ void Robot::on_gcode_received(void *argument)
                             gcode->add_nl = true;
 
                         }else{
-                            for (size_t i = X_AXIS; i <= Z_AXIS; i++) {
+                            if(gcode->has_letter('S')) max_speed = gcode->get_value('S');
+                            if(gcode->has_letter('Z')) actuators[Z_AXIS]->set_max_rate( gcode->get_value('Z') );
+                            for (size_t i = X_AXIS; i <= Y_AXIS; i++) {
                                 if (gcode->has_letter('X' + i)) {
-                                    float v= gcode->get_value('X'+i);
-                                    if(gcode->subcode == 0) this->max_speeds[i]= v;
-                                    else if(gcode->subcode == 1) actuators[i]->set_max_rate(v);
-                                }
-                            }
-
-                            if(gcode->subcode == 1) {
-                                // ABC axis only handle actuator max speeds
-                                for (size_t i = A_AXIS; i < n_motors; i++) {
-                                    int c= 'A' + i - A_AXIS;
-                                    if(gcode->has_letter(c)) {
-                                        float v= gcode->get_value(c);
-                                        actuators[i]->set_max_rate(v);
+                                    float v = gcode->get_value('X'+i);
+                                    if(gcode->subcode == 0) {
+                                        this->max_speeds[i] = v;
+                                    }
+                                    else {
+                                        if(gcode->subcode == 1) {
+                                            actuators[i]->set_max_rate(v * DEG2RAD);
+                                        }
                                     }
                                 }
-
-                            }else{
-                                if(gcode->has_letter('S')) max_speed= gcode->get_value('S');
                             }
-
-                            if(gcode->subcode == 1) check_max_actuator_speeds();
+                            for (size_t i = A_AXIS; i < n_motors; i++) {
+                                char c= 'A' + i - A_AXIS;
+                                if(gcode->has_letter(c)) {
+                                    float v= gcode->get_value(c);
+                                    actuators[i]->set_max_rate(v);
+                                }
+                            }
+                            check_max_actuator_speeds();
                         }
                         break;
 
@@ -609,7 +624,7 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
         }
     }
     // S is modal When specified on a G0/1/2/3 command
-    if(gcode->has_letter('S')) s_value= gcode->get_value('S');
+//    if(gcode->has_letter('S')) s_value= gcode->get_value('S');
     
     bool moved= false;
 
@@ -633,7 +648,7 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
 bool Robot::append_line(Gcode *gcode, const float target[], float rate_mm_s, bool galvo_move)
 {
     // catch negative or zero feed rates and return the same error as GRBL does
-    if(rate_mm_s <= 0.0F) {
+    if(rate_mm_s <= 1.0F) {
         gcode->is_error= true;
         gcode->txt_after_ok= (rate_mm_s == 0 ? "Undefined feed rate" : "feed rate < 0");
         return false;
@@ -644,43 +659,40 @@ bool Robot::append_line(Gcode *gcode, const float target[], float rate_mm_s, boo
     if(galvo_move) {
         float millimeters_of_travel = sqrtf(powf( target[X_AXIS] - machine_position[X_AXIS], 2 ) +  powf( target[Y_AXIS] - machine_position[Y_AXIS], 2 ) );
 
-        if(millimeters_of_travel < 0.00001F) {
-            // we have no movement in XYZ, probably E only extrude or retract
-            return this->append_milestone(target, rate_mm_s, false);
-        }
+        if(millimeters_of_travel > 0.001F) {
+            // We cut the line into smaller segments. This is only needed on a cartesian robot for zgrid, but always necessary for robots with rotational axes like Deltas.
+            // In delta robots either mm_per_line_segment can be used OR delta_segments_per_second
+            // The latter is more efficient and avoids splitting fast long lines into very small segments, like initial z move to 0, it is what Johanns Marlin delta port does
+            uint16_t segments;
 
-        // We cut the line into smaller segments. This is only needed on a cartesian robot for zgrid, but always necessary for robots with rotational axes like Deltas.
-        // In delta robots either mm_per_line_segment can be used OR delta_segments_per_second
-        // The latter is more efficient and avoids splitting fast long lines into very small segments, like initial z move to 0, it is what Johanns Marlin delta port does
-        uint16_t segments;
+            if(this->mm_per_line_segment > 0.01F && gcode->g == 1) {
+                segments = ceilf( millimeters_of_travel / this->mm_per_line_segment);
+            }
+            else {segments= 1;}
 
-        if(this->mm_per_line_segment > 0.01F && gcode->g == 1) {
-            segments = ceilf( millimeters_of_travel / this->mm_per_line_segment);
-        }
-        else {segments= 1;}
+            if (segments > 1) {
+                // A vector to keep track of the endpoint of each segment
+                float segment_delta[N_PRIMARY_AXIS];
+                float segment_end[n_motors];
+                memcpy(segment_end, machine_position, n_motors*sizeof(float));
 
-        if (segments > 1) {
-            // A vector to keep track of the endpoint of each segment
-            float segment_delta[N_PRIMARY_AXIS];
-            float segment_end[n_motors];
-            memcpy(segment_end, machine_position, n_motors*sizeof(float));
+                // How far do we move each segment?
+                segment_delta[X_AXIS] = (target[X_AXIS] - machine_position[X_AXIS]) / segments;
+                segment_delta[Y_AXIS] = (target[Y_AXIS] - machine_position[Y_AXIS]) / segments;
 
-            // How far do we move each segment?
-            segment_delta[X_AXIS] = (target[X_AXIS] - machine_position[X_AXIS]) / segments;
-            segment_delta[Y_AXIS] = (target[Y_AXIS] - machine_position[Y_AXIS]) / segments;
+                // segment 0 is already done - it's the end point of the previous move so we start at segment 1
+                // We always add another point after this loop so we stop at segments-1, ie i < segments
+                for (int i = 1; i < segments; i++) {
+                    if(THEKERNEL->is_halted()) return false; // don't queue any more segments
 
-            // segment 0 is already done - it's the end point of the previous move so we start at segment 1
-            // We always add another point after this loop so we stop at segments-1, ie i < segments
-            for (int i = 1; i < segments; i++) {
-                if(THEKERNEL->is_halted()) return false; // don't queue any more segments
+                    segment_end[X_AXIS] += segment_delta[X_AXIS];
+                    segment_end[Y_AXIS] += segment_delta[Y_AXIS];
 
-                segment_end[X_AXIS] += segment_delta[X_AXIS];
-                segment_end[Y_AXIS] += segment_delta[Y_AXIS];
-
-                // Append the end of this segment to the queue
-                // this can block waiting for free block queue or if in feed hold
-                bool b= this->append_milestone(segment_end, rate_mm_s, galvo_move);
-                moved= moved || b;
+                    // Append the end of this segment to the queue
+                    // this can block waiting for free block queue or if in feed hold
+                    bool b= this->append_milestone(segment_end, rate_mm_s, galvo_move);
+                    moved= moved || b;  //in case some segment got rejected
+                }
             }
         }
     }
@@ -691,13 +703,14 @@ bool Robot::append_line(Gcode *gcode, const float target[], float rate_mm_s, boo
     return moved;
 }
 
+//#include "gpio.h"
+//extern GPIO leds[];
 // Convert target (in machine coordinates) to machine_position, then convert to actuator position and append this to the planner
 // target is in machine coordinates
 bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_move)
 {
     float deltas[n_motors];
     float am_target[n_motors]; // adjust target for bed compensation
-    float unit_vec[N_PRIMARY_AXIS];
     float sos= 0; // sum of squares for just primary axis (XYZ usually)
     float distance;
     // unity transform by default
@@ -707,26 +720,24 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
     if(galvo_move) {
         deltas[X_AXIS] = am_target[X_AXIS] - machine_position[X_AXIS];
         deltas[Y_AXIS] = am_target[Y_AXIS] - machine_position[Y_AXIS];
-        if(fabsf(deltas[X_AXIS]) > 0.00001F) {
+        if(fabsf(deltas[X_AXIS]) > 0.005F) {
             sos += powf(deltas[X_AXIS], 2);
             move = true;
         }
-        if(fabsf(deltas[Y_AXIS]) > 0.00001F) {
+        if(fabsf(deltas[Y_AXIS]) > 0.005F) {
             sos += powf(deltas[Y_AXIS], 2);
             move = true;
         }
         distance= sqrtf(sos);
-        if(distance < 0.0001F) return false;
-        if(rate_mm_s > this->max_speed) {
-            rate_mm_s= this->max_speed;
+//        if(distance < 0.001F) return false;
+        if( rate_mm_s > this->max_speed ) {
+            rate_mm_s = this->max_speed;
         }
-        unit_vec[X_AXIS] = deltas[X_AXIS] / distance;
-        unit_vec[Y_AXIS] = deltas[Y_AXIS] / distance;
     }
     else {
         for (size_t i = Z_AXIS; i < n_motors; i++) {
             deltas[i] = am_target[i] - machine_position[i];
-            if(fabsf(deltas[i]) < 0.00001F) continue;
+            if(fabsf(deltas[i]) < 0.001F) continue;
             // at least one non zero delta
             move = true;
             distance = fabsf(deltas[i]);
@@ -744,23 +755,23 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
     // use default acceleration to start with
     float acceleration = default_acceleration;
 
-    float isecs = rate_mm_s / distance;
+//    float isecs = rate_mm_s / distance;
 
     // check per-actuator speed limits
     if(galvo_move) {
         // find actuator position given the machine position.
         arm_solution->cartesian_to_actuator( am_target, actuator_pos );
 
-        for (size_t actuator = 0; actuator < N_PRIMARY_AXIS; actuator++) {
-            float d = fabsf(actuator_pos[actuator] - actuators[actuator]->get_last_milestone());
-            if(d < 0.00001F) continue;// no realistic movement for this actuator
+//        for (size_t actuator = X_AXIS; actuator <= Y_AXIS ; actuator++) {
+//            float d = fabsf(actuator_pos[actuator] - actuators[actuator]->get_last_milestone());
+//            if(d < 0.00001F) continue;// no realistic movement for this actuator
 
-            float actuator_rate= d * isecs;
-            if (actuator_rate > actuators[actuator]->get_max_rate()) {
-                rate_mm_s *= (actuators[actuator]->get_max_rate() / actuator_rate);
-            }
-        }
-        acceleration = actuators[0]->get_acceleration();
+//            float actuator_rate= d * isecs;
+//            if (actuator_rate > actuators[actuator]->get_max_rate()) {
+//                rate_mm_s *= (actuators[actuator]->get_max_rate() / actuator_rate);
+//            }
+//        }
+//        acceleration = actuators[0]->get_acceleration();
     }
     else {
         for (size_t i = Z_AXIS; i < n_motors; i++) {
@@ -778,7 +789,7 @@ bool Robot::append_milestone(const float target[], float rate_mm_s, bool galvo_m
     // Append the block to the planner
     // NOTE that distance here should be either the distance travelled by the XYZ axis, or the E mm travel if a solo E move
     // NOTE this call will bock until there is room in the block queue, on_idle will continue to be called
-    if(THEKERNEL->planner->append_block( actuator_pos, n_motors, rate_mm_s, distance, galvo_move ? unit_vec : nullptr, acceleration, s_value, is_g123)) {
+    if(THEKERNEL->planner->append_block( actuator_pos, n_motors, rate_mm_s, distance, acceleration, galvo_move, is_g123)) {
         // this is the new machine position
         memcpy(this->machine_position, am_target, n_motors*sizeof(float));
         return true;

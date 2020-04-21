@@ -47,7 +47,7 @@ StepTicker::StepTicker()
 
     // Default start values
     this->set_frequency(100000);
-    this->set_unstep_time(100);
+    this->set_unstep_time(1);
 
     this->unstep.reset();
     this->num_motors = 0;
@@ -169,31 +169,6 @@ void StepTicker::step_tick (void)
             for (uint8_t m = 0; m <= 1; m++) {
                 if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
 
-                if(current_block->acceleration >= 1.0F) {
-                    current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
-
-                    if(current_tick == current_block->tick_info[m].next_accel_event) {
-                        if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
-                            current_block->tick_info[m].acceleration_change = 0;
-                            if(current_block->decelerate_after < current_block->total_move_ticks) {
-                                current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
-                                if(current_tick != current_block->decelerate_after) { // We are plateauing
-                                    // steps/sec / tick frequency to get steps per tick
-                                    current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
-                                }
-                            }
-                        }
-
-                        if(current_tick == current_block->decelerate_after) { // We start decelerating
-                            current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
-                        }
-                    }
-                    // protect against rounding errors and such
-                    if(current_block->tick_info[m].steps_per_tick <= 0) {
-                        current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
-                        current_block->tick_info[m].steps_per_tick = 0;
-                    }
-                }
                 current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
 
                 if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
@@ -256,7 +231,7 @@ void StepTicker::step_tick (void)
                 }
 
                 if(current_tick == current_block->decelerate_after) { // We start decelerating
-                    current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
+                    current_block->tick_info[m].acceleration_change = -current_block->tick_info[m].acceleration_change;
                 }
             }
 

@@ -111,25 +111,24 @@ void Conveyor::on_idle(void*)
     }
 }
 
+#include "gpio.h"
+extern GPIO leds[];
 // see if we are idle
 // this checks the block queue is empty, and that the step queue is empty and
 // checks that all motors are no longer moving
-
-#include "gpio.h"
-extern GPIO leds[];
 bool Conveyor::is_idle() const
 {
     if(queue.is_empty()) {
         for(auto &a : THEROBOT->actuators) {
             if(a->is_moving()) {
-                leds[2]= 1;
+//                leds[2]= 1;
                 return false;
             }
         }
-        leds[2]= 0;
+//        leds[2]= 0;
         return true;
     }
-    leds[2]= 1;
+//    leds[2]= 1;
     return false;
 }
 
@@ -209,7 +208,7 @@ bool Conveyor::get_next_block(Block **block)
     }
 
     // default the feerate to zero if there is no block available
-    this->current_feedrate= 0;
+//    this->current_feedrate= 0;
 
     if(THEKERNEL->is_halted() || queue.isr_tail_i == queue.head_i) return false; // we do not have anything to give
 
@@ -219,11 +218,11 @@ bool Conveyor::get_next_block(Block **block)
     Block *b= queue.item_ref(queue.isr_tail_i);
     // we cannot use this now if it is being updated
     if(!b->locked) {
-        if(!b->is_ready) __debugbreak(); // should never happen
+        if(!b->is_ready) return false; // should never happen
 
         b->is_ticking= true;
         b->recalculate_flag= false;
-        this->current_feedrate= b->nominal_speed;
+//        this->current_feedrate= b->nominal_speed;
         *block= b;
         return true;
     }
@@ -263,7 +262,7 @@ void Conveyor::dump_queue()
 {
     for (unsigned int index = queue.tail_i, i = 0; true; index = queue.next(index), i++ ) {
         THEKERNEL->streams->printf("block %03d > ", i);
-        queue.item_ref(index)->debug();
+//        queue.item_ref(index)->debug();
 
         if (index == queue.head_i)
             break;

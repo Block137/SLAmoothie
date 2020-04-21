@@ -44,10 +44,6 @@ void SerialConsole::on_module_loaded() {
 void SerialConsole::on_serial_char_received(){
     while(this->serial->readable()){
         char received = this->serial->getc();
-        if(received == '?') {
-            query_flag= true;
-            continue;
-        }
         if(received == 'X'-'A'+1) { // ^X
             halt_flag= true;
             continue;
@@ -60,10 +56,6 @@ void SerialConsole::on_serial_char_received(){
 
 void SerialConsole::on_idle(void * argument)
 {
-    if(query_flag) {
-        query_flag= false;
-        puts(THEKERNEL->get_query_string().c_str());
-    }
     if(halt_flag) {
         halt_flag= false;
         THEKERNEL->call_event(ON_HALT, nullptr);
@@ -81,9 +73,9 @@ void SerialConsole::on_main_loop(void * argument){
         string received;
         received.reserve(20);
         while(1){
-           char c;
-           this->buffer.pop_front(c);
-           if( c == '\n' ){
+            char c;
+            this->buffer.pop_front(c);
+            if( c == '\n' ){
                 struct SerialMessage message;
                 message.message = received;
                 message.stream = this;

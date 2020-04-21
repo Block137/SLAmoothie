@@ -174,27 +174,21 @@ void Gcode::prepare_cached_values(bool strip)
     char *p= nullptr;
     if( this->has_letter('G') ) {
         this->has_g = true;
+        this->has_m = false;
         this->g = this->get_int('G', &p);
-
     } else {
         this->has_g = false;
-    }
-
-    if( this->has_letter('M') ) {
-        this->has_m = true;
-        this->m = this->get_int('M', &p);
-
-    } else {
-        this->has_m = false;
-    }
-
-    if(has_g || has_m) {
-        // look for subcode and extract it
-        if(p != nullptr && *p == '.') {
-            this->subcode = strtoul(p+1, &p, 10);
-
-        }else{
-            this->subcode= 0;
+        if( this->has_letter('M') ) {
+            this->has_m = true;
+            this->m = this->get_int('M', &p);
+            // look for subcode and extract it
+            if(p != nullptr && *p == '.') {
+                this->subcode = strtoul(p+1, &p, 10);
+            }else{
+                this->subcode= 0;
+            }
+        } else {
+            this->has_m = false;
         }
     }
 
